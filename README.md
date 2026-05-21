@@ -63,7 +63,7 @@ SPSM derives this automatically from the serial you enter in Settings—you do n
 ## Quick start
 
 ```bash
-git clone https://github.com/YOUR_USER/SPSM.git
+git clone https://github.com/digitalexpl0it/SPSM.git
 cd SPSM
 cp .env.example .env
 # Edit .env — set a strong SECRET_KEY for production
