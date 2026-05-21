@@ -1,0 +1,149 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  html {
+    font-size: 18px;
+  }
+
+  body {
+    font-family: "Outfit", system-ui, sans-serif;
+    font-size: 1rem;
+    line-height: 1.55;
+    background: #050508;
+    min-height: 100vh;
+  }
+  code,
+  .mono {
+    font-family: "JetBrains Mono", monospace;
+  }
+}
+
+@layer components {
+  .card-glow {
+    @apply rounded-2xl border border-surface/80 bg-panel/90 backdrop-blur-sm;
+    box-shadow:
+      0 0 0 1px rgb(34 211 238 / 0.08),
+      0 8px 32px rgb(34 211 238 / 0.1),
+      0 4px 20px rgb(168 85 247 / 0.06);
+  }
+
+  .text-gradient {
+    @apply bg-clip-text text-transparent bg-gradient-brand font-semibold;
+  }
+
+  .border-gradient {
+    border-image: linear-gradient(135deg, #22d3ee, #a855f7) 1;
+  }
+
+  .btn-primary {
+    @apply px-5 py-2.5 rounded-xl text-base font-medium text-void transition-all;
+    background: linear-gradient(135deg, #22d3ee, #a855f7);
+    box-shadow: 0 4px 20px rgb(34 211 238 / 0.35);
+  }
+
+  .input-dark {
+    @apply w-full px-4 py-3 rounded-xl text-base bg-void border border-surface text-cyan-glow placeholder-mist/60 transition;
+  }
+
+  .input-dark:focus {
+    outline: none;
+    border-color: #22d3ee;
+    box-shadow: 0 0 24px rgb(34 211 238 / 0.35);
+  }
+
+  .nav-link {
+    @apply flex items-center gap-2 px-4 py-2 rounded-lg text-base text-mist hover:text-cyan-glow transition;
+  }
+
+  .nav-link.active {
+    @apply text-cyan-glow bg-surface/60;
+    box-shadow: inset 0 0 20px rgb(34 211 238 / 0.08);
+  }
+
+  .table-zebra {
+    @apply w-full text-base text-left border-collapse;
+  }
+
+  .table-zebra thead {
+    @apply text-sm uppercase tracking-wide text-mist border-b border-surface;
+  }
+
+  .table-zebra th {
+    @apply px-4 py-3 font-medium;
+  }
+
+  .table-zebra td {
+    @apply px-4 py-3;
+  }
+
+  .table-zebra tbody tr:nth-child(odd) {
+    @apply bg-surface/25;
+  }
+
+  .table-zebra tbody tr:nth-child(even) {
+    @apply bg-transparent;
+  }
+
+  .table-zebra tbody tr:hover {
+    @apply bg-cyan/5;
+  }
+}
+
+.btn-primary:hover {
+  filter: brightness(1.1);
+  box-shadow: 0 6px 28px rgb(168 85 247 / 0.4);
+}
+
+/* Solar throbber */
+.solar-throbber {
+  position: relative;
+  width: 48px;
+  height: 48px;
+}
+.solar-throbber::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: 50%;
+  background: conic-gradient(from 0deg, #22d3ee, #a855f7, #22d3ee);
+  animation: spin 2s linear infinite;
+  opacity: 0.7;
+}
+.solar-throbber::after {
+  content: "";
+  position: absolute;
+  inset: 6px;
+  border-radius: 50%;
+  background: #0d0d12;
+}
+.solar-throbber .core {
+  position: absolute;
+  inset: 14px;
+  border-radius: 50%;
+  background: radial-gradient(circle, #67e8f9 0%, #22d3ee 40%, transparent 70%);
+  animation: throb 1.2s ease-in-out infinite;
+}
+
+.flow-line,
+.flow-line-reverse {
+  stroke-dasharray: 5 4;
+  opacity: 0.92;
+}
+.flow-line {
+  animation: dash 0.9s linear infinite;
+}
+.flow-line-reverse {
+  animation: dash-reverse 0.9s linear infinite;
+}
+@keyframes dash {
+  to {
+    stroke-dashoffset: -8;
+  }
+}
+@keyframes dash-reverse {
+  to {
+    stroke-dashoffset: 8;
+  }
+}
