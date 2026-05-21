@@ -24,6 +24,7 @@ class SettingsUpdate(BaseModel):
     collector_enabled: bool | None = None
     websocket_live: bool | None = None
     battery_enabled: bool | None = None
+    inverter_gauge_max_w: int | None = Field(None, ge=0, le=600)
     setup_complete: bool | None = None
 
 
@@ -60,6 +61,9 @@ async def update_settings(
     for key, value in mapping.items():
         if key in bool_keys:
             await set_setting(db, key, "true" if value else "false")
+        elif key == "inverter_gauge_max_w":
+            n = int(value) if value is not None else 0
+            await set_setting(db, key, "" if n <= 0 else str(n))
         else:
             await set_setting(db, key, str(value))
 

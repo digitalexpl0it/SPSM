@@ -2,6 +2,7 @@ import { useEffect, useState, type FormEvent } from "react";
 import {
   Battery,
   CheckCircle2,
+  Cpu,
   Globe,
   Hash,
   Home,
@@ -42,6 +43,8 @@ export function SettingsPage() {
     site_address: "",
     collector_enabled: true,
     battery_enabled: false,
+    inverter_gauge_auto: true,
+    inverter_gauge_max_w: 320,
     websocket_live: false,
     setup_complete: false,
   });
@@ -65,6 +68,11 @@ export function SettingsPage() {
           site_address: s.site_address || "",
           collector_enabled: s.collector_enabled !== "false",
           battery_enabled: s.battery_enabled === "true",
+          inverter_gauge_auto: !(s.inverter_gauge_max_w || "").trim(),
+          inverter_gauge_max_w: (() => {
+            const n = parseInt(s.inverter_gauge_max_w || "", 10);
+            return !Number.isNaN(n) && n > 0 ? n : 320;
+          })(),
           websocket_live: s.websocket_live === "true",
           setup_complete: s.setup_complete === "true",
         });
@@ -101,8 +109,10 @@ export function SettingsPage() {
     setSaving(true);
     setMessage("");
     try {
+      const { inverter_gauge_auto, inverter_gauge_max_w, ...rest } = form;
       await settingsApi.update({
-        ...form,
+        ...rest,
+        inverter_gauge_max_w: inverter_gauge_auto ? 0 : inverter_gauge_max_w,
         setup_complete: true,
       });
       await refreshStatus();
@@ -259,6 +269,52 @@ export function SettingsPage() {
                   value={form.site_address}
                   onChange={(e) => setForm({ ...form, site_address: e.target.value })}
                 />
+              </section>
+
+              <section className="card-glow p-6 space-y-4">
+                <h2 className="text-lg font-semibold flex items-center gap-2 text-cyan-glow">
+                  <Cpu className="w-5 h-5" />
+                  Micro-inverter gauges
+                </h2>
+                <p className="text-sm text-mist">
+                  Full-scale on the power gauge on the Inverters page (0 → max watts). Use
+                  automatic detection from each module type, or set one value for all panels.
+                </p>
+                <label className="flex items-center gap-2 text-sm text-mist">
+                  <input
+                    type="checkbox"
+                    checked={form.inverter_gauge_auto}
+                    onChange={(e) =>
+                      setForm({ ...form, inverter_gauge_auto: e.target.checked })
+                    }
+                  />
+                  Automatic (from module type, usually 320W)
+                </label>
+                {!form.inverter_gauge_auto && (
+                  <div>
+                    <label className="text-xs text-mist block mb-1">Gauge maximum (watts)</label>
+                    <div className="flex items-center gap-2">
+                      <input
+                        type="number"
+                        min={50}
+                        max={600}
+                        className="input-dark w-28"
+                        value={form.inverter_gauge_max_w}
+                        onChange={(e) =>
+                          setForm({
+                            ...form,
+                            inverter_gauge_max_w: parseInt(e.target.value, 10) || 320,
+                          })
+                        }
+                      />
+                      <span className="text-sm text-mist">W</span>
+                    </div>
+                    <p className="text-xs text-mist mt-1">
+                      Typical micro-inverters: 290–400W. Lower = fuller arc at partial sun;
+                      higher = arc stays shorter at peak.
+                    </p>
+                  </div>
+                )}
               </section>
 
               <section className="card-glow p-6 space-y-4">

@@ -3,7 +3,7 @@ import type { LucideIcon } from "lucide-react";
 import { Activity, Cpu, Gauge, Sun, Thermometer, Zap } from "lucide-react";
 import { InverterPowerGauge } from "../components/InverterPowerGauge";
 import { SolarThrobber } from "../components/SolarThrobber";
-import { dataApi } from "../lib/api";
+import { dataApi, settingsApi } from "../lib/api";
 import { inverterGaugeMaxW } from "../lib/inverterGaugeMax";
 
 interface InverterData {
@@ -65,12 +65,12 @@ function Pill({
 export function InvertersPage() {
   const [inverters, setInverters] = useState<Record<string, InverterData>>({});
   const [connected, setConnected] = useState(false);
+  const [gaugeMaxOverride, setGaugeMaxOverride] = useState<number | null>(null);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    dataApi
-      .live()
-      .then((res) => {
+    Promise.all([dataApi.live(), settingsApi.get()])
+      .then(([res, settings]) => {
         setConnected(res.connected);
         const inv = (res.telemetry?.inverters || {}) as Record<string, InverterData | string>;
         const parsed: Record<string, InverterData> = {};
@@ -78,9 +78,14 @@ export function InvertersPage() {
           if (typeof val === "object" && val !== null) parsed[key] = val as InverterData;
         }
         setInverters(parsed);
+        const w = parseInt(settings.inverter_gauge_max_w || "", 10);
+        setGaugeMaxOverride(!Number.isNaN(w) && w > 0 ? w : null);
       })
       .finally(() => setLoading(false));
   }, []);
+
+  const resolveGaugeMax = (prodMdlNm?: string) =>
+    inverterGaugeMaxW(prodMdlNm, gaugeMaxOverride);
 
   if (loading) return <SolarThrobber label="Loading inverters…" />;
 
@@ -159,7 +164,7 @@ export function InvertersPage() {
                     <InverterPowerGauge
                       kw={kw}
                       active={active}
-                      maxW={inverterGaugeMaxW(inv.prodMdlNm)}
+                      maxW={resolveGaugeMax(inv.prodMdlNm)}
                     />
                   </div>
 

@@ -16,7 +16,20 @@ KEYS = {
     "collector_enabled": "true",
     "websocket_live": "false",
     "battery_enabled": "false",
+    "inverter_gauge_max_w": "",
 }
+
+
+def inverter_gauge_max_w_from_settings(settings: dict[str, str]) -> int | None:
+    """User override for inverter gauge full-scale (watts). None = auto from module type."""
+    raw = (settings.get("inverter_gauge_max_w") or "").strip()
+    if not raw:
+        return None
+    try:
+        value = int(raw)
+    except ValueError:
+        return None
+    return value if value > 0 else None
 
 
 def battery_enabled_from_settings(settings: dict[str, str]) -> bool:

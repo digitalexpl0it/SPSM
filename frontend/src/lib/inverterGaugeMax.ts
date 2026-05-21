@@ -10,7 +10,14 @@ const MODEL_MAX_W: Record<string, number> = {
   AC_Module_Type_C: 290,
 };
 
-export function inverterGaugeMaxW(prodMdlNm?: string | null): number {
+/** Resolved max watts for gauge arc (override wins over module detection). */
+export function inverterGaugeMaxW(
+  prodMdlNm?: string | null,
+  settingsOverrideW?: number | null
+): number {
+  if (settingsOverrideW != null && settingsOverrideW > 0) {
+    return settingsOverrideW;
+  }
   if (!prodMdlNm) return DEFAULT_MAX_W;
   const trimmed = prodMdlNm.trim();
   if (MODEL_MAX_W[trimmed]) return MODEL_MAX_W[trimmed];
