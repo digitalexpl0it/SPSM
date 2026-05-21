@@ -11,10 +11,17 @@ import {
   RefreshCw,
   Server,
   Shield,
+  Thermometer,
   Timer,
   UserCircle,
   Wrench,
 } from "lucide-react";
+import {
+  DEFAULT_TEMP_THRESHOLDS,
+  defaultThresholdsLabel,
+  PANEL_TEMP_REFERENCE,
+  type TempUnit,
+} from "../lib/temperatureSettings";
 import { AccountSettings } from "../components/AccountSettings";
 import { SolarThrobber } from "../components/SolarThrobber";
 import { settingsApi } from "../lib/api";
@@ -45,6 +52,10 @@ export function SettingsPage() {
     battery_enabled: false,
     inverter_gauge_auto: true,
     inverter_gauge_max_w: 320,
+    temp_unit: "f" as TempUnit,
+    temp_threshold_auto: true,
+    temp_warning: DEFAULT_TEMP_THRESHOLDS.f.warning,
+    temp_critical: DEFAULT_TEMP_THRESHOLDS.f.critical,
     websocket_live: false,
     setup_complete: false,
   });
@@ -72,6 +83,18 @@ export function SettingsPage() {
           inverter_gauge_max_w: (() => {
             const n = parseInt(s.inverter_gauge_max_w || "", 10);
             return !Number.isNaN(n) && n > 0 ? n : 320;
+          })(),
+          temp_unit: s.temp_unit === "c" ? "c" : "f",
+          temp_threshold_auto: !(s.temp_warning || "").trim() && !(s.temp_critical || "").trim(),
+          temp_warning: (() => {
+            const unit: TempUnit = s.temp_unit === "c" ? "c" : "f";
+            const n = parseInt(s.temp_warning || "", 10);
+            return !Number.isNaN(n) && n > 0 ? n : DEFAULT_TEMP_THRESHOLDS[unit].warning;
+          })(),
+          temp_critical: (() => {
+            const unit: TempUnit = s.temp_unit === "c" ? "c" : "f";
+            const n = parseInt(s.temp_critical || "", 10);
+            return !Number.isNaN(n) && n > 0 ? n : DEFAULT_TEMP_THRESHOLDS[unit].critical;
           })(),
           websocket_live: s.websocket_live === "true",
           setup_complete: s.setup_complete === "true",
@@ -109,10 +132,19 @@ export function SettingsPage() {
     setSaving(true);
     setMessage("");
     try {
-      const { inverter_gauge_auto, inverter_gauge_max_w, ...rest } = form;
+      const {
+        inverter_gauge_auto,
+        inverter_gauge_max_w,
+        temp_threshold_auto,
+        temp_warning,
+        temp_critical,
+        ...rest
+      } = form;
       await settingsApi.update({
         ...rest,
         inverter_gauge_max_w: inverter_gauge_auto ? 0 : inverter_gauge_max_w,
+        temp_warning: temp_threshold_auto ? 0 : temp_warning,
+        temp_critical: temp_threshold_auto ? 0 : temp_critical,
         setup_complete: true,
       });
       await refreshStatus();
@@ -313,6 +345,122 @@ export function SettingsPage() {
                       Typical micro-inverters: 290–400W. Lower = fuller arc at partial sun;
                       higher = arc stays shorter at peak.
                     </p>
+                  </div>
+                )}
+              </section>
+
+              <section className="card-glow p-6 space-y-4">
+                <h2 className="text-lg font-semibold flex items-center gap-2 text-cyan-glow">
+                  <Thermometer className="w-5 h-5" />
+                  Temperature
+                </h2>
+                <p className="text-sm text-mist">
+                  Each micro-inverter reports a heatsink{" "}
+                  temperature from your PVS (not the glass surface, but it reflects heat stress on
+                  the electronics). Panels are tested at STC (
+                  {PANEL_TEMP_REFERENCE.stc.f}°F / {PANEL_TEMP_REFERENCE.stc.c}°C) and are typically
+                  rated to {PANEL_TEMP_REFERENCE.maxRated.f}°F (
+                  {PANEL_TEMP_REFERENCE.maxRated.c}°C) maximum; in hot climates, cell temperatures
+                  often reach {PANEL_TEMP_REFERENCE.hotClimateTypical.f}–
+                  {PANEL_TEMP_REFERENCE.maxRated.f}°F. Default alerts use those markers — lower them
+                  if you want earlier warnings in milder weather.
+                </p>
+                <div>
+                  <label className="text-xs text-mist block mb-1">Display unit</label>
+                  <div className="flex gap-2">
+                    {(["f", "c"] as const).map((u) => (
+                      <button
+                        key={u}
+                        type="button"
+                        onClick={() => {
+                          const defs = DEFAULT_TEMP_THRESHOLDS[u];
+                          setForm((prev) => ({
+                            ...prev,
+                            temp_unit: u,
+                            ...(prev.temp_threshold_auto
+                              ? {
+                                  temp_warning: defs.warning,
+                                  temp_critical: defs.critical,
+                                }
+                              : {}),
+                          }));
+                        }}
+                        className={`px-4 py-2 rounded-xl text-sm border transition ${
+                          form.temp_unit === u
+                            ? "border-cyan/50 bg-cyan/15 text-cyan-glow"
+                            : "border-surface text-mist hover:border-cyan/30"
+                        }`}
+                      >
+                        °{u === "f" ? "F" : "C"}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+                <label className="flex items-center gap-2 text-sm text-mist">
+                  <input
+                    type="checkbox"
+                    checked={form.temp_threshold_auto}
+                    onChange={(e) => {
+                      const auto = e.target.checked;
+                      const defs = DEFAULT_TEMP_THRESHOLDS[form.temp_unit];
+                      setForm({
+                        ...form,
+                        temp_threshold_auto: auto,
+                        ...(auto
+                          ? {
+                              temp_warning: defs.warning,
+                              temp_critical: defs.critical,
+                            }
+                          : {}),
+                      });
+                    }}
+                  />
+                  Default alert thresholds ({defaultThresholdsLabel(form.temp_unit)})
+                </label>
+                {!form.temp_threshold_auto && (
+                  <div className="grid grid-cols-2 gap-3">
+                    <div>
+                      <label className="text-xs text-mist block mb-1">Warning at or above</label>
+                      <div className="flex items-center gap-2">
+                        <input
+                          type="number"
+                          min={20}
+                          max={250}
+                          className="input-dark w-24"
+                          value={form.temp_warning}
+                          onChange={(e) =>
+                            setForm({
+                              ...form,
+                              temp_warning: parseInt(e.target.value, 10) || 0,
+                            })
+                          }
+                        />
+                        <span className="text-sm text-mist">
+                          °{form.temp_unit === "f" ? "F" : "C"}
+                        </span>
+                      </div>
+                    </div>
+                    <div>
+                      <label className="text-xs text-mist block mb-1">Critical at or above</label>
+                      <div className="flex items-center gap-2">
+                        <input
+                          type="number"
+                          min={20}
+                          max={250}
+                          className="input-dark w-24"
+                          value={form.temp_critical}
+                          onChange={(e) =>
+                            setForm({
+                              ...form,
+                              temp_critical: parseInt(e.target.value, 10) || 0,
+                            })
+                          }
+                        />
+                        <span className="text-sm text-mist">
+                          °{form.temp_unit === "f" ? "F" : "C"}
+                        </span>
+                      </div>
+                    </div>
                   </div>
                 )}
               </section>

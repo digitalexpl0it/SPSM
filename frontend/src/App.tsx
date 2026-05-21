@@ -6,6 +6,7 @@ import { DashboardPage } from "./pages/DashboardPage";
 import { InvertersPage } from "./pages/InvertersPage";
 import { LoginPage } from "./pages/LoginPage";
 import { SettingsPage } from "./pages/SettingsPage";
+import { HealthPage } from "./pages/HealthPage";
 import { SystemPage } from "./pages/SystemPage";
 
 function RequireAuth({ children }: { children: React.ReactNode }) {
@@ -51,6 +52,14 @@ export default function App() {
           element={
             <RequireSetup>
               <InvertersPage />
+            </RequireSetup>
+          }
+        />
+        <Route
+          path="/health"
+          element={
+            <RequireSetup>
+              <HealthPage />
             </RequireSetup>
           }
         />

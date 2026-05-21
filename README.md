@@ -16,6 +16,7 @@
 - **System** — PVS supervisor info, optional raw meter dump
 - **Settings** — PVS connection, site metadata, collector interval, battery monitoring toggle
 - **Accounts** — admin user management (create / edit / delete portal users)
+- **System health** — rule-based alerts (PVS offline, stale collector, stuck inverters, overtemperature, production drops, fault flags)
 - **Background collector** — polls the PVS on a schedule and stores time-series data in PostgreSQL
 
 Tested with PVS6 firmware **BUILD 61840+** (e.g. 61846). Older firmware may use different varserver paths.

@@ -25,6 +25,9 @@ class SettingsUpdate(BaseModel):
     websocket_live: bool | None = None
     battery_enabled: bool | None = None
     inverter_gauge_max_w: int | None = Field(None, ge=0, le=600)
+    temp_unit: str | None = Field(None, pattern="^(c|f)$")
+    temp_warning: int | None = Field(None, ge=0, le=250)
+    temp_critical: int | None = Field(None, ge=0, le=250)
     setup_complete: bool | None = None
 
 
@@ -64,6 +67,12 @@ async def update_settings(
         elif key == "inverter_gauge_max_w":
             n = int(value) if value is not None else 0
             await set_setting(db, key, "" if n <= 0 else str(n))
+        elif key in ("temp_warning", "temp_critical"):
+            n = int(value) if value is not None else 0
+            await set_setting(db, key, "" if n <= 0 else str(n))
+        elif key == "temp_unit":
+            u = str(value).lower() if value else "f"
+            await set_setting(db, key, u if u in ("c", "f") else "f")
         else:
             await set_setting(db, key, str(value))
 

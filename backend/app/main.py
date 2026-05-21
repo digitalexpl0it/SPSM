@@ -6,7 +6,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from app.auth import ensure_default_admin
 from app.config import settings
 from app.database import Base, engine, async_session
-from app.routers import auth, data, settings as settings_router, users
+from app.routers import auth, data, health_alerts, settings as settings_router, users
 
 
 @asynccontextmanager
@@ -32,8 +32,9 @@ app.include_router(auth.router)
 app.include_router(settings_router.router)
 app.include_router(data.router)
 app.include_router(users.router)
+app.include_router(health_alerts.router)
 
 
 @app.get("/api/health")
-async def health():
+async def health_ping():
     return {"status": "ok"}

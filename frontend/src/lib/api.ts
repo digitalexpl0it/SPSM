@@ -82,6 +82,29 @@ export const usersApi = {
     api<void>(`/api/users/${id}`, { method: "DELETE" }),
 };
 
+export interface HealthAlert {
+  id: string;
+  severity: "info" | "warning" | "critical";
+  title: string;
+  message: string;
+  detail?: string | null;
+}
+
+export interface HealthResponse {
+  checked_at: string;
+  pvs_connected: boolean;
+  collector_enabled: boolean;
+  latest_reading_at: string | null;
+  temp_config?: { unit: "c" | "f"; warning: number; critical: number };
+  alerts: HealthAlert[];
+  ok: string[];
+  summary: "healthy" | "critical" | "warning" | "info";
+}
+
+export const healthApi = {
+  site: () => api<HealthResponse>("/api/health/site"),
+};
+
 export const dataApi = {
   live: () => api<LiveResponse>("/api/data/live"),
   latest: () => api<Reading | null>("/api/data/latest"),

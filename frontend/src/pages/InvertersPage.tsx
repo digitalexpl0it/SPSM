@@ -5,6 +5,11 @@ import { InverterPowerGauge } from "../components/InverterPowerGauge";
 import { SolarThrobber } from "../components/SolarThrobber";
 import { dataApi, settingsApi } from "../lib/api";
 import { inverterGaugeMaxW } from "../lib/inverterGaugeMax";
+import {
+  formatHeatsinkTemp,
+  heatsinkPillClass,
+  parseTempSettings,
+} from "../lib/temperatureSettings";
 
 interface InverterData {
   sn?: string;
@@ -29,15 +34,6 @@ function panelLabel(path: string, inv: InverterData) {
   const m = path.match(/inverter\/(\d+)/);
   const idx = m ? parseInt(m[1], 10) + 1 : "?";
   return inv.sn || `Panel ${idx}`;
-}
-
-/** Heatsink °C from live PVS data — green → amber → orange → red. */
-function tempPillStyle(c: number | null): string {
-  if (c == null) return "bg-surface/80 text-mist border-mist/30";
-  if (c < 40) return "bg-cyan-500/15 text-cyan-300 border-cyan-500/35";
-  if (c < 50) return "bg-amber-500/15 text-amber-300 border-amber-500/35";
-  if (c < 65) return "bg-orange-500/20 text-orange-300 border-orange-500/40";
-  return "bg-red-500/25 text-red-300 border-red-500/50 shadow-[0_0_12px_rgba(239,68,68,0.25)]";
 }
 
 function Pill({
@@ -66,6 +62,7 @@ export function InvertersPage() {
   const [inverters, setInverters] = useState<Record<string, InverterData>>({});
   const [connected, setConnected] = useState(false);
   const [gaugeMaxOverride, setGaugeMaxOverride] = useState<number | null>(null);
+  const [tempSettings, setTempSettings] = useState(() => parseTempSettings({}));
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
@@ -80,6 +77,7 @@ export function InvertersPage() {
         setInverters(parsed);
         const w = parseInt(settings.inverter_gauge_max_w || "", 10);
         setGaugeMaxOverride(!Number.isNaN(w) && w > 0 ? w : null);
+        setTempSettings(parseTempSettings(settings));
       })
       .finally(() => setLoading(false));
   }, []);
@@ -169,8 +167,11 @@ export function InvertersPage() {
                   </div>
 
                   <div className="relative z-[1] mt-5 flex flex-wrap justify-center gap-2 max-w-full">
-                    <Pill icon={Thermometer} className={tempPillStyle(temp)}>
-                      {temp != null ? `${Math.round(temp)}°C` : "—°C"}
+                    <Pill
+                      icon={Thermometer}
+                      className={heatsinkPillClass(temp, tempSettings)}
+                    >
+                      {formatHeatsinkTemp(temp, tempSettings.unit)}
                     </Pill>
                     <Pill
                       icon={Zap}
