@@ -7,6 +7,7 @@ import { StatCard } from "../components/StatCard";
 import { SolarThrobber } from "../components/SolarThrobber";
 import { reportsApi, type DailyReportResponse } from "../lib/api";
 import { getSiteTimezone, loadSiteSettings } from "../lib/siteSettings";
+import { formatErrorMessage } from "../lib/toast";
 
 const RANGES = [
   { days: 7, label: "7 days" },
@@ -18,6 +19,7 @@ export function ReportsPage() {
   const [days, setDays] = useState(7);
   const [data, setData] = useState<DailyReportResponse | null>(null);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState("");
   const [tz, setTz] = useState("America/Los_Angeles");
   const [rank, setRank] = useState<
     { path: string; serial: string; kw: number; temp: number | null }[]
@@ -25,15 +27,21 @@ export function ReportsPage() {
 
   const load = useCallback(async () => {
     setLoading(true);
+    setError("");
     try {
       const settings = await loadSiteSettings();
       setTz(getSiteTimezone(settings));
-      const [report, rankRes] = await Promise.all([
-        reportsApi.daily(days),
-        reportsApi.inverterRank(),
-      ]);
+      const report = await reportsApi.daily(days);
       setData(report);
-      setRank(rankRes.items.slice(0, 5));
+      try {
+        const rankRes = await reportsApi.inverterRank();
+        setRank(rankRes.items.slice(0, 5));
+      } catch {
+        setRank([]);
+      }
+    } catch (e) {
+      setData(null);
+      setError(formatErrorMessage(e));
     } finally {
       setLoading(false);
     }
@@ -106,13 +114,33 @@ export function ReportsPage() {
         </div>
       </div>
 
-      {loading && (
+      {loading && data && (
         <p className="text-sm text-mist flex items-center gap-2">
           <Loader2 className="w-4 h-4 animate-spin" /> Updating…
         </p>
       )}
 
-      {data && (
+      {error && (
+        <div className="card-glow p-6 space-y-3">
+          <p className="text-sm text-red-400">{error}</p>
+          <button
+            type="button"
+            onClick={load}
+            className="text-sm text-cyan-glow border border-cyan/30 px-4 py-2 rounded-lg hover:bg-cyan/10"
+          >
+            Retry
+          </button>
+        </div>
+      )}
+
+      {!error && data && data.days.every((d) => d.sample_count === 0) && (
+        <div className="card-glow p-6 text-sm text-mist">
+          No collector readings for this period yet. After the PVS connection is saved and the
+          collector has run, daily totals will appear here.
+        </div>
+      )}
+
+      {!error && data && (
         <>
           <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-2 xl:grid-cols-4">
             <StatCard

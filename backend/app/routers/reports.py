@@ -14,7 +14,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.auth import get_current_user
 from app.database import get_db
-from app.json_util import sanitize_for_json
+from app.json_util import safe_float, sanitize_for_json
 from app.models import Reading, User
 from app.report_period import (
     co2_factor_from_settings,
