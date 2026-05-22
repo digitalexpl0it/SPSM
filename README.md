@@ -4,9 +4,31 @@
 
 > **Disclaimer:** SPSM is an independent hobby project. It is not affiliated with, endorsed by, or supported by SunPower or SunStrong Management.
 
-## Screenshot
+## Screenshots
 
-![SPSM dashboard — live stats, energy flow, and power chart](Screenshots/Dashboard.png)
+### Dashboard
+
+Live stats, energy flow diagram, and power chart (hour → year).
+
+![SPSM dashboard](Screenshots/Dashboard.png)
+
+### Micro-inverters
+
+Per-panel power gauge, temperature, voltage, and lifetime energy.
+
+![SPSM micro-inverters](Screenshots/Inverters.png)
+
+### System health
+
+Rule-based alerts, collapsible check list, and recent alert history.
+
+![SPSM system health](Screenshots/Health.png)
+
+### Energy reports
+
+Daily PV / load / grid totals, bar chart, CSV export, and lowest-output panels.
+
+![SPSM energy reports](Screenshots/Reports.png)
 
 ## Features
 
@@ -14,10 +36,14 @@
 - **Energy flow diagram** — animated solar → home → grid (day/night visuals, optional battery path)
 - **Micro-inverters** — per-panel power, temperature, voltage, lifetime energy
 - **System** — PVS supervisor info, optional raw meter dump
-- **Settings** — PVS connection, site metadata, collector interval, battery monitoring toggle
+- **Reports** — daily PV / load / import / export, CO₂ estimate, CSV export, weakest-panel snapshot
+- **Settings** — PVS connection, site timezone, collector, temperature alerts, notifications (webhook / ntfy)
 - **Accounts** — admin user management (create / edit / delete portal users)
-- **System health** — rule-based alerts (PVS offline, stale collector, stuck inverters, overtemperature, production drops, fault flags)
+- **System health** — rule-based alerts with history; optional push on new critical/warning events
 - **Background collector** — polls the PVS on a schedule and stores time-series data in PostgreSQL
+- **Pre-aggregated rollups** — faster week/month/year charts
+- **Prometheus** — `GET /metrics` on the API for external monitoring
+- **Setup wizard** — first-run flow when PVS is not configured
 
 Tested with PVS6 firmware **BUILD 61840+** (e.g. 61846). Older firmware may use different varserver paths.
 
@@ -120,8 +146,42 @@ curl -sk -b /tmp/pvs.txt "https://$PVS_IP/vars?match=livedata&fmt=obj" | head
 | `poll_interval_seconds` | How often the collector polls the PVS (min 10, default 60) |
 | `battery_enabled` | Enable ESS/SunVault telemetry and UI (off for solar-only sites) |
 | `collector_enabled` | Turn background polling on or off |
+| `site_timezone` | IANA timezone for “today”, reports, and daylight health checks |
+| `websocket_live` | SSE live dashboard (polls PVS every 5s) |
+| `notify_*` | Webhook URL and/or ntfy topic for health alerts |
 
 Settings are stored in the database and editable from the UI.
+
+### Backfill chart rollups
+
+After upgrading, rebuild rollups from existing readings (once):
+
+```bash
+docker compose exec api sh -c 'cd /app && PYTHONPATH=. python scripts/backfill_rollups.py'
+```
+
+Or from `backend/`: `PYTHONPATH=. python scripts/backfill_rollups.py`
+
+### Home Assistant
+
+Create a long-lived JWT (login via API), then a REST sensor:
+
+```yaml
+rest:
+  - resource: http://<spsm-host>:8000/api/data/latest
+    headers:
+      Authorization: "Bearer <token>"
+    sensor:
+      - name: SPSM PV Power
+        value_template: "{{ value_json.pv_kw }}"
+        unit_of_measurement: "kW"
+```
+
+### Database backup
+
+```bash
+docker compose exec db pg_dump -U spsm spsm > spsm-backup.sql
+```
 
 ## Data collected
 
@@ -187,9 +247,9 @@ VITE_API_URL=http://localhost:8000 npm run dev
 
 ## Roadmap ideas
 
-- Pre-aggregated chart queries for faster year/month views
-- Local-time “today” summaries
-- Optional notifications (grid export milestones, offline PVS)
+- Per-inverter historical charts from stored snapshots
+- Temperature derating estimate on the Inverters page
+- Multi-site / multiple PVS hosts in one portal
 
 ## License
 

@@ -10,8 +10,14 @@ import {
   RefreshCw,
 } from "lucide-react";
 import { SolarThrobber } from "../components/SolarThrobber";
-import { healthApi, type HealthResponse, type HealthAlert } from "../lib/api";
+import {
+  healthApi,
+  type HealthHistoryEvent,
+  type HealthResponse,
+  type HealthAlert,
+} from "../lib/api";
 import { formatChartDateTime } from "../lib/formatChartDateTime";
+import { getSiteTimezone, loadSiteSettings } from "../lib/siteSettings";
 import {
   defaultHealthThresholdsLine,
   tempThresholdsLabel,
@@ -56,6 +62,8 @@ function SummaryBadge({ summary }: { summary: HealthResponse["summary"] }) {
 
 export function HealthPage() {
   const [data, setData] = useState<HealthResponse | null>(null);
+  const [history, setHistory] = useState<HealthHistoryEvent[]>([]);
+  const [siteTz, setSiteTz] = useState<string | undefined>();
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -64,7 +72,14 @@ export function HealthPage() {
     if (!initial) setRefreshing(true);
     setError(null);
     try {
-      setData(await healthApi.site());
+      const settings = await loadSiteSettings();
+      setSiteTz(getSiteTimezone(settings));
+      const [site, hist] = await Promise.all([
+        healthApi.site(),
+        healthApi.history(30),
+      ]);
+      setData(site);
+      setHistory(hist);
     } catch (e) {
       setError(e instanceof Error ? e.message : "Health check failed");
     } finally {
@@ -115,11 +130,11 @@ export function HealthPage() {
             <SummaryBadge summary={data.summary} />
             <div className="text-xs text-mist space-y-0.5">
               <p>
-                Checked {formatChartDateTime(data.checked_at)}
+                Checked {formatChartDateTime(data.checked_at, siteTz)}
                 {data.pvs_connected ? " · PVS reachable" : " · PVS not reachable"}
               </p>
               {data.latest_reading_at && (
-                <p>Last reading {formatChartDateTime(data.latest_reading_at)}</p>
+                <p>Last reading {formatChartDateTime(data.latest_reading_at, siteTz)}</p>
               )}
             </div>
           </div>
@@ -210,6 +225,45 @@ export function HealthPage() {
             </div>
           ) : (
             <p className="text-sm text-mist card-glow p-4">No alerts at this time.</p>
+          )}
+
+          {history.length > 0 && (
+            <details className="card-glow p-5 group">
+              <summary className="text-sm font-medium text-mist flex items-center gap-2 cursor-pointer select-none list-none [&::-webkit-details-marker]:hidden">
+                Recent history ({history.length})
+                <ChevronDown className="w-4 h-4 ml-auto shrink-0 transition-transform group-open:rotate-180" />
+              </summary>
+              <div className="mt-3 overflow-x-auto">
+                <table className="table-zebra text-sm">
+                  <thead>
+                    <tr>
+                      <th>Severity</th>
+                      <th>Issue</th>
+                      <th>First seen</th>
+                      <th>Status</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {history.map((ev) => (
+                      <tr key={ev.id}>
+                        <td className="capitalize">{ev.severity}</td>
+                        <td>{ev.title}</td>
+                        <td className="text-xs text-mist">
+                          {formatChartDateTime(ev.first_seen, siteTz)}
+                        </td>
+                        <td className="text-xs">
+                          {ev.active ? (
+                            <span className="text-amber-300">Active</span>
+                          ) : (
+                            <span className="text-emerald-400/90">Resolved</span>
+                          )}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </details>
           )}
         </>
       )}

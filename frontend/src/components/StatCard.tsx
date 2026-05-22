@@ -1,10 +1,11 @@
 import type { LucideIcon } from "lucide-react";
+import type { ReactNode } from "react";
 
 interface Props {
   icon: LucideIcon;
   label: string;
   value: string;
-  sub?: string;
+  sub?: ReactNode;
   accent?: "cyan" | "amber" | "purple" | "emerald";
 }
 

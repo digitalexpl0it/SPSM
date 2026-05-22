@@ -6,7 +6,16 @@ from fastapi.middleware.cors import CORSMiddleware
 from app.auth import ensure_default_admin
 from app.config import settings
 from app.database import Base, engine, async_session
-from app.routers import auth, data, health_alerts, settings as settings_router, users
+from app.routers import (
+    auth,
+    data,
+    health_alerts,
+    live_stream,
+    metrics,
+    reports,
+    settings as settings_router,
+    users,
+)
 
 
 @asynccontextmanager
@@ -33,6 +42,9 @@ app.include_router(settings_router.router)
 app.include_router(data.router)
 app.include_router(users.router)
 app.include_router(health_alerts.router)
+app.include_router(reports.router)
+app.include_router(live_stream.router)
+app.include_router(metrics.router)
 
 
 @app.get("/api/health")

@@ -60,3 +60,42 @@ class DeviceSnapshot(Base):
     ts: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True)
     category: Mapped[str] = mapped_column(String(32), index=True)  # inverter, meter, ess, system
     payload: Mapped[dict[str, Any]] = mapped_column(JSONB)
+
+
+class ReadingRollup(Base):
+    """Pre-aggregated buckets for fast long-range charts."""
+
+    __tablename__ = "reading_rollups"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    bucket_start: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True)
+    bucket: Mapped[str] = mapped_column(String(8), index=True)  # hour | day
+
+    pv_kw_avg: Mapped[float | None] = mapped_column(Float)
+    net_kw_avg: Mapped[float | None] = mapped_column(Float)
+    load_kw_avg: Mapped[float | None] = mapped_column(Float)
+    battery_kw_avg: Mapped[float | None] = mapped_column(Float)
+    battery_soc_avg: Mapped[float | None] = mapped_column(Float)
+
+    pv_kwh_total_end: Mapped[float | None] = mapped_column(Float)
+    net_kwh_total_end: Mapped[float | None] = mapped_column(Float)
+    load_kwh_total_end: Mapped[float | None] = mapped_column(Float)
+    sample_count: Mapped[int] = mapped_column(Integer, default=0)
+
+
+class HealthEvent(Base):
+    """Persisted health alert transitions."""
+
+    __tablename__ = "health_events"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    alert_id: Mapped[str] = mapped_column(String(64), index=True)
+    severity: Mapped[str] = mapped_column(String(16))
+    title: Mapped[str] = mapped_column(String(128))
+    message: Mapped[str] = mapped_column(Text, default="")
+    detail: Mapped[str] = mapped_column(Text, default="")
+    first_seen: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    last_seen: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    resolved_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    active: Mapped[bool] = mapped_column(Boolean, default=True, index=True)
+    last_notified_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)

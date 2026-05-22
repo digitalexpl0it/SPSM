@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
+import { Link } from "react-router-dom";
 import {
   Battery,
   Gauge,
@@ -15,6 +16,9 @@ import { PowerChart } from "../components/PowerChart";
 import { SolarThrobber } from "../components/SolarThrobber";
 import { StatCard } from "../components/StatCard";
 import { dataApi, type LiveResponse, type Reading, type SeriesPoint, type SummaryResponse } from "../lib/api";
+import { loadSiteSettings } from "../lib/siteSettings";
+
+const API = import.meta.env.VITE_API_URL || "";
 
 const RANGES = ["hour", "day", "week", "month", "year"] as const;
 type Range = (typeof RANGES)[number];
@@ -78,9 +82,35 @@ export function DashboardPage() {
   }, []);
 
   useEffect(() => {
-    refreshLive();
-    const id = setInterval(refreshLive, 15000);
-    return () => clearInterval(id);
+    let es: EventSource | null = null;
+    let pollId: ReturnType<typeof setInterval> | undefined;
+
+    const start = async () => {
+      const settings = await loadSiteSettings();
+      const token = localStorage.getItem("token");
+      if (settings.websocket_live === "true" && token) {
+        es = new EventSource(
+          `${API}/api/live/stream?token=${encodeURIComponent(token)}`
+        );
+        es.onmessage = (ev) => {
+          try {
+            const d = JSON.parse(ev.data) as LiveResponse;
+            setLive(d);
+          } catch {
+            /* ignore */
+          }
+        };
+        pollId = setInterval(() => dataApi.summary().then(setSummary), 60000);
+      } else {
+        refreshLive();
+        pollId = setInterval(refreshLive, 15000);
+      }
+    };
+    start();
+    return () => {
+      es?.close();
+      if (pollId) clearInterval(pollId);
+    };
   }, [refreshLive]);
 
   useEffect(() => {
@@ -221,7 +251,14 @@ export function DashboardPage() {
                 icon={TrendingUp}
                 label="Today production"
                 value={`${summary?.today_pv_kwh?.toFixed(1) ?? "0"} kWh`}
-                sub={`${summary?.sample_count ?? 0} samples`}
+                sub={
+                  <>
+                    {summary?.sample_count ?? 0} samples ·{" "}
+                    <Link to="/reports" className="text-cyan-glow hover:underline">
+                      View report
+                    </Link>
+                  </>
+                }
                 accent="amber"
               />
               <StatCard

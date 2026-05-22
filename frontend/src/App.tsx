@@ -7,7 +7,9 @@ import { InvertersPage } from "./pages/InvertersPage";
 import { LoginPage } from "./pages/LoginPage";
 import { SettingsPage } from "./pages/SettingsPage";
 import { HealthPage } from "./pages/HealthPage";
+import { ReportsPage } from "./pages/ReportsPage";
 import { SystemPage } from "./pages/SystemPage";
+import { SetupWizard } from "./components/SetupWizard";
 
 function RequireAuth({ children }: { children: React.ReactNode }) {
   const { token, loading } = useAuth();
@@ -26,6 +28,18 @@ function RequireSetup({ children }: { children: React.ReactNode }) {
   const { setupRequired } = useAuth();
   if (setupRequired) return <Navigate to="/settings" replace />;
   return <>{children}</>;
+}
+
+function SettingsOrSetup() {
+  const { setupRequired } = useAuth();
+  if (setupRequired) {
+    return (
+      <div className="min-h-[60vh] flex items-center justify-center">
+        <SetupWizard />
+      </div>
+    );
+  }
+  return <SettingsPage />;
 }
 
 export default function App() {
@@ -56,6 +70,14 @@ export default function App() {
           }
         />
         <Route
+          path="/reports"
+          element={
+            <RequireSetup>
+              <ReportsPage />
+            </RequireSetup>
+          }
+        />
+        <Route
           path="/health"
           element={
             <RequireSetup>
@@ -71,7 +93,12 @@ export default function App() {
             </RequireSetup>
           }
         />
-        <Route path="/settings" element={<SettingsPage />} />
+        <Route
+          path="/settings"
+          element={
+            <SettingsOrSetup />
+          }
+        />
       </Route>
       <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>

@@ -14,38 +14,52 @@ export function parseApiTimestamp(ts: string): Date {
   return new Date(hasTz ? normalized : `${normalized}Z`);
 }
 
-/** MM-DD-YYYY hh:mm AM/PM in the user's local timezone. */
-export function formatChartDateTime(ts: string): string {
+function formatInZone(d: Date, timeZone?: string): string {
+  const opts: Intl.DateTimeFormatOptions = {
+    month: "2-digit",
+    day: "2-digit",
+    year: "numeric",
+    hour: "numeric",
+    minute: "2-digit",
+    hour12: true,
+    ...(timeZone ? { timeZone } : {}),
+  };
+  const parts = new Intl.DateTimeFormat("en-US", opts).formatToParts(d);
+  const get = (type: string) => parts.find((p) => p.type === type)?.value ?? "";
+  const h = parseInt(get("hour"), 10);
+  return `${get("month")}-${get("day")}-${get("year")} ${h}:${get("minute")} ${get("dayPeriod").toUpperCase()}`;
+}
+
+/** MM-DD-YYYY hh:mm AM/PM in site timezone (or browser local). */
+export function formatChartDateTime(ts: string, timeZone?: string): string {
   const d = parseApiTimestamp(ts);
   if (Number.isNaN(d.getTime())) return ts;
-
-  const mm = String(d.getMonth() + 1).padStart(2, "0");
-  const dd = String(d.getDate()).padStart(2, "0");
-  const yyyy = d.getFullYear();
-  const mins = String(d.getMinutes()).padStart(2, "0");
-  let h = d.getHours();
-  const ampm = h >= 12 ? "PM" : "AM";
-  h = h % 12 || 12;
-
-  return `${mm}-${dd}-${yyyy} ${String(h).padStart(2, "0")}:${mins} ${ampm}`;
+  return formatInZone(d, timeZone);
 }
 
 /** Shorter x-axis labels depending on selected range. */
-export function formatChartAxis(ts: string, range: string): string {
+export function formatChartAxis(ts: string, range: string, timeZone?: string): string {
   const d = parseApiTimestamp(ts);
   if (Number.isNaN(d.getTime())) return ts;
 
-  const mm = String(d.getMonth() + 1).padStart(2, "0");
-  const dd = String(d.getDate()).padStart(2, "0");
-  const yyyy = d.getFullYear();
-  const mins = String(d.getMinutes()).padStart(2, "0");
-  let h = d.getHours();
-  const ampm = h >= 12 ? "PM" : "AM";
-  h = h % 12 || 12;
-  const time = `${h}:${mins} ${ampm}`;
+  const opts: Intl.DateTimeFormatOptions = {
+    month: "2-digit",
+    day: "2-digit",
+    year: "numeric",
+    hour: "numeric",
+    minute: "2-digit",
+    hour12: true,
+    ...(timeZone ? { timeZone } : {}),
+  };
+  const parts = new Intl.DateTimeFormat("en-US", opts).formatToParts(d);
+  const get = (type: string) => parts.find((p) => p.type === type)?.value ?? "";
+  const h = parseInt(get("hour"), 10);
+  const time = `${h}:${get("minute")} ${get("dayPeriod").toUpperCase()}`;
+  const md = `${get("month")}-${get("day")}`;
+  const y = get("year");
 
-  if (range === "year") return `${mm}-${yyyy}`;
-  if (range === "month") return `${mm}-${dd}-${yyyy}`;
-  if (range === "week" || range === "day") return `${mm}-${dd} ${time}`;
+  if (range === "year") return `${md}-${y}`;
+  if (range === "month") return `${md}-${y}`;
+  if (range === "week" || range === "day") return `${md} ${time}`;
   return time;
 }

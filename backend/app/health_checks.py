@@ -15,7 +15,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.json_util import safe_float
 from app.models import DeviceSnapshot, Reading
 from app.pvs_client import PvsClient
-from app.settings_store import temp_config_from_settings
+from app.settings_store import site_timezone_from_settings, temp_config_from_settings
+from app.timezone_util import is_daylight_local
 
 logger = logging.getLogger(__name__)
 
@@ -64,12 +65,11 @@ class HealthAlert:
         }
 
 
-def _utc_hour(now: datetime) -> int:
-    return now.astimezone(UTC).hour
-
-
-def _is_daylight_utc(now: datetime) -> bool:
-    h = _utc_hour(now)
+def _is_daylight(now: datetime, settings: dict[str, str]) -> bool:
+    tz = site_timezone_from_settings(settings)
+    if tz:
+        return is_daylight_local(tz, now)
+    h = now.astimezone(UTC).hour
     return DAYLIGHT_UTC_START <= h < DAYLIGHT_UTC_END
 
 
@@ -193,7 +193,7 @@ async def evaluate_site_health(
     recent_rows = list(result.scalars().all())
 
     # --- Daytime zero production ---
-    if _is_daylight_utc(now) and recent_rows:
+    if _is_daylight(now, settings) and recent_rows:
         window_start = now - timedelta(minutes=DAYLIGHT_ZERO_PV_MINUTES)
         window_rows = [r for r in recent_rows if (r.ts if r.ts.tzinfo else r.ts.replace(tzinfo=UTC)) >= window_start]
         if len(window_rows) >= 3:
@@ -280,7 +280,7 @@ async def evaluate_site_health(
                 continue
             powers.append((_inv_label(str(path), fields), _inv_power_kw(fields), _inv_temp_c(fields)))
 
-        if _is_daylight_utc(now) and len(powers) >= MIN_INVERTERS_FOR_STUCK_CHECK:
+        if _is_daylight(now, settings) and len(powers) >= MIN_INVERTERS_FOR_STUCK_CHECK:
             producing = [p for p in powers if p[1] >= STUCK_PRODUCING_KW]
             idle = [p for p in powers if p[1] < STUCK_ZERO_KW]
             if len(producing) >= 2 and idle:

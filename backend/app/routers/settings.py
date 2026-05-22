@@ -7,8 +7,10 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.auth import get_current_user
 from app.database import get_db
 from app.models import User
+from app.notifier import send_notification
 from app.pvs_client import PvsClient
 from app.settings_store import get_all_settings, get_setting, is_setup_complete, set_setting
+from app.timezone_util import DEFAULT_TIMEZONE
 
 router = APIRouter(prefix="/api/settings", tags=["settings"])
 
@@ -28,6 +30,13 @@ class SettingsUpdate(BaseModel):
     temp_unit: str | None = Field(None, pattern="^(c|f)$")
     temp_warning: int | None = Field(None, ge=0, le=250)
     temp_critical: int | None = Field(None, ge=0, le=250)
+    site_timezone: str | None = Field(None, max_length=64)
+    notify_enabled: bool | None = None
+    notify_webhook_url: str | None = None
+    notify_ntfy_topic: str | None = None
+    notify_min_severity: str | None = Field(None, pattern="^(warning|critical)$")
+    co2_kg_per_kwh: float | None = Field(None, ge=0, le=2)
+    temp_coefficient_pct_per_c: float | None = Field(None, ge=-1, le=0)
     setup_complete: bool | None = None
 
 
@@ -59,6 +68,7 @@ async def update_settings(
         "collector_enabled",
         "websocket_live",
         "battery_enabled",
+        "notify_enabled",
         "setup_complete",
     }
     for key, value in mapping.items():
@@ -73,6 +83,11 @@ async def update_settings(
         elif key == "temp_unit":
             u = str(value).lower() if value else "f"
             await set_setting(db, key, u if u in ("c", "f") else "f")
+        elif key == "site_timezone":
+            tz = (str(value).strip() if value else "") or DEFAULT_TIMEZONE
+            await set_setting(db, key, tz)
+        elif key in ("co2_kg_per_kwh", "temp_coefficient_pct_per_c"):
+            await set_setting(db, key, str(value))
         else:
             await set_setting(db, key, str(value))
 
@@ -99,3 +114,24 @@ async def test_pvs(
     if not ok:
         raise HTTPException(status_code=400, detail=message)
     return {"ok": True, "message": message, "data": data}
+
+
+@router.post("/test-notify")
+async def test_notify(
+    _: Annotated[User, Depends(get_current_user)],
+    db: Annotated[AsyncSession, Depends(get_db)],
+):
+    settings = await get_all_settings(db)
+    ok = await send_notification(
+        settings,
+        title="Test alert",
+        message="SPSM notification test — your webhook or ntfy is configured.",
+        severity="warning",
+        alert_id="test",
+    )
+    if not ok:
+        raise HTTPException(
+            status_code=400,
+            detail="Notification not sent. Enable notifications and set webhook URL or ntfy topic.",
+        )
+    return {"ok": True, "message": "Test notification sent"}

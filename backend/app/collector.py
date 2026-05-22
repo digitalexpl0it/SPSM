@@ -13,7 +13,13 @@ from app.database import async_session, engine
 from app.database import Base
 from app.models import DeviceSnapshot, Reading
 from app.pvs_client import PvsClient, parse_livedata
-from app.settings_store import battery_enabled_from_settings, get_all_settings, get_setting
+from app.rollup import upsert_rollups_for_reading
+from app.settings_store import (
+    battery_enabled_from_settings,
+    get_all_settings,
+    get_setting,
+    site_timezone_from_settings,
+)
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("collector")
@@ -49,21 +55,24 @@ async def collect_once() -> None:
         parsed = parse_livedata(livedata_raw)
         now = datetime.now(UTC)
 
-        session.add(
-            Reading(
-                ts=now,
-                pv_kw=parsed.get("pv_kw"),
-                net_kw=parsed.get("net_kw"),
-                load_kw=parsed.get("load_kw"),
-                battery_kw=parsed.get("battery_kw"),
-                battery_soc=parsed.get("battery_soc"),
-                pv_kwh_total=parsed.get("pv_kwh_total"),
-                net_kwh_total=parsed.get("net_kwh_total"),
-                load_kwh_total=parsed.get("load_kwh_total"),
-                battery_kwh_total=parsed.get("battery_kwh_total"),
-                backup_minutes=parsed.get("backup_minutes"),
-                mid_state=parsed.get("mid_state"),
-            )
+        reading = Reading(
+            ts=now,
+            pv_kw=parsed.get("pv_kw"),
+            net_kw=parsed.get("net_kw"),
+            load_kw=parsed.get("load_kw"),
+            battery_kw=parsed.get("battery_kw"),
+            battery_soc=parsed.get("battery_soc"),
+            pv_kwh_total=parsed.get("pv_kwh_total"),
+            net_kwh_total=parsed.get("net_kwh_total"),
+            load_kwh_total=parsed.get("load_kwh_total"),
+            battery_kwh_total=parsed.get("battery_kwh_total"),
+            backup_minutes=parsed.get("backup_minutes"),
+            mid_state=parsed.get("mid_state"),
+        )
+        session.add(reading)
+        await session.flush()
+        await upsert_rollups_for_reading(
+            session, reading, site_timezone_from_settings(settings)
         )
 
         categories = [

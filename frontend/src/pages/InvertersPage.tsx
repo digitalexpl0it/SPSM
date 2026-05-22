@@ -1,10 +1,13 @@
-import { useEffect, useState, type ReactNode } from "react";
+import { useCallback, useEffect, useState, type ReactNode } from "react";
 import type { LucideIcon } from "lucide-react";
-import { Activity, Cpu, Gauge, Sun, Thermometer, Zap } from "lucide-react";
+import { Activity, Cpu, Gauge, Loader2, RefreshCw, Sun, Thermometer, Zap } from "lucide-react";
 import { InverterPowerGauge } from "../components/InverterPowerGauge";
 import { SolarThrobber } from "../components/SolarThrobber";
-import { dataApi, settingsApi } from "../lib/api";
+import { dataApi } from "../lib/api";
+import { formatChartDateTime } from "../lib/formatChartDateTime";
 import { inverterGaugeMaxW } from "../lib/inverterGaugeMax";
+import { getSiteTimezone, loadSiteSettings } from "../lib/siteSettings";
+import { isSnapshotRecent } from "../lib/snapshotStale";
 import {
   formatHeatsinkTemp,
   heatsinkPillClass,
@@ -36,6 +39,15 @@ function panelLabel(path: string, inv: InverterData) {
   return inv.sn || `Panel ${idx}`;
 }
 
+function parseInverters(payload: Record<string, unknown> | undefined) {
+  const parsed: Record<string, InverterData> = {};
+  if (!payload) return parsed;
+  for (const [key, val] of Object.entries(payload)) {
+    if (typeof val === "object" && val !== null) parsed[key] = val as InverterData;
+  }
+  return parsed;
+}
+
 function Pill({
   icon: Icon,
   children,
@@ -64,23 +76,65 @@ export function InvertersPage() {
   const [gaugeMaxOverride, setGaugeMaxOverride] = useState<number | null>(null);
   const [tempSettings, setTempSettings] = useState(() => parseTempSettings({}));
   const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
+  const [snapshotAt, setSnapshotAt] = useState<string | null>(null);
+  const [dataSource, setDataSource] = useState<"cached" | "live">("cached");
+  const [refreshError, setRefreshError] = useState<string | null>(null);
+  const [siteTz, setSiteTz] = useState<string | undefined>();
+
+  const applyPayload = useCallback(
+    (
+      payload: Record<string, unknown> | undefined,
+      ts: string | null,
+      source: "cached" | "live"
+    ) => {
+      setInverters(parseInverters(payload));
+      setSnapshotAt(ts);
+      setDataSource(source);
+    },
+    []
+  );
+
+  const loadCached = useCallback(async () => {
+    const [settings, snaps] = await Promise.all([
+      loadSiteSettings(),
+      dataApi.devices("inverters"),
+    ]);
+    setSiteTz(getSiteTimezone(settings));
+    const w = parseInt(settings.inverter_gauge_max_w || "", 10);
+    setGaugeMaxOverride(!Number.isNaN(w) && w > 0 ? w : null);
+    setTempSettings(parseTempSettings(settings));
+    const snap = snaps[0];
+    applyPayload(snap?.payload as Record<string, unknown>, snap?.ts ?? null, "cached");
+    setConnected(isSnapshotRecent(snap?.ts ?? null));
+    setRefreshError(null);
+  }, [applyPayload]);
+
+  const refreshFromPvs = useCallback(async () => {
+    setRefreshing(true);
+    setRefreshError(null);
+    try {
+      const res = await dataApi.live();
+      setConnected(res.connected);
+      if (!res.connected) {
+        setRefreshError(res.error || "PVS not reachable");
+        return;
+      }
+      const inv = (res.telemetry?.inverters || {}) as Record<string, unknown>;
+      applyPayload(inv, res.ts ?? new Date().toISOString(), "live");
+    } catch (e) {
+      setConnected(false);
+      setRefreshError(e instanceof Error ? e.message : "Refresh failed");
+    } finally {
+      setRefreshing(false);
+    }
+  }, [applyPayload]);
 
   useEffect(() => {
-    Promise.all([dataApi.live(), settingsApi.get()])
-      .then(([res, settings]) => {
-        setConnected(res.connected);
-        const inv = (res.telemetry?.inverters || {}) as Record<string, InverterData | string>;
-        const parsed: Record<string, InverterData> = {};
-        for (const [key, val] of Object.entries(inv)) {
-          if (typeof val === "object" && val !== null) parsed[key] = val as InverterData;
-        }
-        setInverters(parsed);
-        const w = parseInt(settings.inverter_gauge_max_w || "", 10);
-        setGaugeMaxOverride(!Number.isNaN(w) && w > 0 ? w : null);
-        setTempSettings(parseTempSettings(settings));
-      })
+    loadCached()
+      .catch(() => setRefreshError("Could not load saved inverter data"))
       .finally(() => setLoading(false));
-  }, []);
+  }, [loadCached]);
 
   const resolveGaugeMax = (prodMdlNm?: string) =>
     inverterGaugeMaxW(prodMdlNm, gaugeMaxOverride);
@@ -93,36 +147,65 @@ export function InvertersPage() {
     return kw != null && kw > 0.001;
   }).length;
 
+  const updatedLabel = snapshotAt ? formatChartDateTime(snapshotAt, siteTz) : null;
+
   return (
     <div className="space-y-6">
-      <div>
-        <h1 className="text-2xl font-bold text-gradient flex items-center gap-2">
-          <Cpu className="w-7 h-7 text-cyan" />
-          Micro-inverters
-        </h1>
-        <p className="text-sm text-mist mt-2 max-w-2xl">
-          Each card is one SunPower micro-inverter on your roof — power, temperature, and lifetime
-          energy for that panel. Data comes straight from your PVS6 over the local network.
-        </p>
+      <div className="flex flex-wrap items-start justify-between gap-4">
+        <div>
+          <h1 className="text-2xl font-bold text-gradient flex items-center gap-2">
+            <Cpu className="w-7 h-7 text-cyan" />
+            Micro-inverters
+          </h1>
+          <p className="text-sm text-mist mt-2 max-w-2xl">
+            Each card is one SunPower micro-inverter — power, temperature, and lifetime energy.
+          </p>
+        </div>
+        <div className="flex flex-col items-end gap-2">
+          {updatedLabel && (
+            <p className="text-xs text-mist text-right max-w-xs">
+              {dataSource === "live" ? "Live from PVS" : "From collector"}: {updatedLabel}
+              {dataSource === "cached" && !isSnapshotRecent(snapshotAt) && (
+                <span className="text-amber-400/90"> · may be stale</span>
+              )}
+            </p>
+          )}
+          <button
+            type="button"
+            onClick={refreshFromPvs}
+            disabled={refreshing}
+            className="flex items-center gap-2 px-4 py-2 rounded-xl border border-cyan/30 text-cyan-glow hover:bg-cyan/10 transition text-sm"
+          >
+            {refreshing ? (
+              <Loader2 className="w-4 h-4 animate-spin" />
+            ) : (
+              <RefreshCw className="w-4 h-4" />
+            )}
+            Refresh from PVS
+          </button>
+        </div>
       </div>
 
-      {!connected && (
-        <p className="text-red-400 text-sm">PVS not connected — check Settings.</p>
+      {refreshError && <p className="text-sm text-red-400">{refreshError}</p>}
+
+      {!connected && dataSource === "cached" && entries.length === 0 && (
+        <p className="text-amber-400 text-sm">
+          No cached inverter data — run the collector or refresh from PVS.
+        </p>
       )}
 
       {entries.length === 0 ? (
         <div className="card-glow p-6 text-mist text-sm space-y-2">
-          <p>No inverter data returned from the PVS.</p>
+          <p>No inverter data yet.</p>
           <p>
-            At night inverters often report zero power but should still appear here once the
-            connection is working. If this persists during daylight, use Settings → Test
-            connection.
+            Click <span className="text-cyan-glow">Refresh from PVS</span> or wait for the
+            collector.
           </p>
         </div>
       ) : (
         <>
           <p className="text-sm text-cyan-glow">
-            {entries.length} inverter{entries.length !== 1 ? "s" : ""} found
+            {entries.length} inverter{entries.length !== 1 ? "s" : ""}
             {producing > 0 ? ` · ${producing} producing now` : " · none producing (night/cloud?)"}
           </p>
           <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">

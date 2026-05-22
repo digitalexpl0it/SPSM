@@ -59,6 +59,53 @@ export const settingsApi = {
         body: JSON.stringify({ pvs_host, pvs_serial, pvs_verify_ssl }),
       }
     ),
+  testNotify: () =>
+    api<{ ok: boolean; message: string }>("/api/settings/test-notify", { method: "POST" }),
+};
+
+export interface DailyReportDay {
+  date: string;
+  pv_kwh: number;
+  load_kwh: number;
+  import_kwh: number;
+  export_kwh: number;
+  self_consumption_pct: number | null;
+  co2_kg: number;
+  sample_count: number;
+}
+
+export interface DailyReportResponse {
+  timezone: string;
+  days: DailyReportDay[];
+  totals: {
+    pv_kwh: number;
+    load_kwh: number;
+    import_kwh: number;
+    export_kwh: number;
+    co2_kg: number;
+  };
+}
+
+export interface HealthHistoryEvent {
+  id: number;
+  alert_id: string;
+  severity: string;
+  title: string;
+  message: string;
+  detail: string;
+  first_seen: string;
+  last_seen: string;
+  resolved_at: string | null;
+  active: boolean;
+}
+
+export const reportsApi = {
+  daily: (days: number) => api<DailyReportResponse>(`/api/reports/daily?days=${days}`),
+  exportCsvUrl: (days: number) => `${API}/api/reports/export?days=${days}`,
+  inverterRank: () =>
+    api<{ ts: string; items: { path: string; serial: string; kw: number; temp: number | null }[] }>(
+      "/api/reports/inverters/rank"
+    ),
 };
 
 export type PortalUser = { id: number; username: string; is_admin: boolean };
@@ -103,6 +150,7 @@ export interface HealthResponse {
 
 export const healthApi = {
   site: () => api<HealthResponse>("/api/health/site"),
+  history: (days = 30) => api<HealthHistoryEvent[]>(`/api/health/history?days=${days}`),
 };
 
 export const dataApi = {
@@ -145,7 +193,10 @@ export interface SeriesPoint {
 export interface SummaryResponse {
   today_pv_kwh: number;
   today_net_kwh?: number;
+  today_import_kwh?: number;
+  today_export_kwh?: number;
   today_load_kwh: number;
+  timezone?: string;
   current?: Reading;
   sample_count: number;
 }

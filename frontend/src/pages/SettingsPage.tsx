@@ -12,10 +12,22 @@ import {
   Server,
   Shield,
   Thermometer,
+  Bell,
   Timer,
   UserCircle,
   Wrench,
 } from "lucide-react";
+import { clearSiteSettingsCache } from "../lib/siteSettings";
+
+const COMMON_TIMEZONES = [
+  "America/Los_Angeles",
+  "America/Denver",
+  "America/Chicago",
+  "America/New_York",
+  "America/Phoenix",
+  "Pacific/Honolulu",
+  "UTC",
+];
 import {
   DEFAULT_TEMP_THRESHOLDS,
   defaultThresholdsLabel,
@@ -57,11 +69,17 @@ export function SettingsPage() {
     temp_warning: DEFAULT_TEMP_THRESHOLDS.f.warning,
     temp_critical: DEFAULT_TEMP_THRESHOLDS.f.critical,
     websocket_live: false,
+    site_timezone: "America/Los_Angeles",
+    notify_enabled: false,
+    notify_webhook_url: "",
+    notify_ntfy_topic: "",
+    notify_min_severity: "critical" as "warning" | "critical",
     setup_complete: false,
   });
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [testing, setTesting] = useState(false);
+  const [testingNotify, setTestingNotify] = useState(false);
   const [testResult, setTestResult] = useState<{ ok: boolean; message: string } | null>(null);
   const [message, setMessage] = useState("");
 
@@ -97,6 +115,12 @@ export function SettingsPage() {
             return !Number.isNaN(n) && n > 0 ? n : DEFAULT_TEMP_THRESHOLDS[unit].critical;
           })(),
           websocket_live: s.websocket_live === "true",
+          site_timezone: s.site_timezone || "America/Los_Angeles",
+          notify_enabled: s.notify_enabled === "true",
+          notify_webhook_url: s.notify_webhook_url || "",
+          notify_ntfy_topic: s.notify_ntfy_topic || "",
+          notify_min_severity:
+            s.notify_min_severity === "warning" ? "warning" : "critical",
           setup_complete: s.setup_complete === "true",
         });
       })
@@ -147,6 +171,7 @@ export function SettingsPage() {
         temp_critical: temp_threshold_auto ? 0 : temp_critical,
         setup_complete: true,
       });
+      clearSiteSettingsCache();
       await refreshStatus();
       setMessage("Settings saved. Collector will use these on the next poll.");
     } catch (e) {
@@ -301,6 +326,23 @@ export function SettingsPage() {
                   value={form.site_address}
                   onChange={(e) => setForm({ ...form, site_address: e.target.value })}
                 />
+                <div>
+                  <label className="text-xs text-mist block mb-1">Timezone</label>
+                  <select
+                    className="input-dark w-full"
+                    value={form.site_timezone}
+                    onChange={(e) => setForm({ ...form, site_timezone: e.target.value })}
+                  >
+                    {COMMON_TIMEZONES.map((tz) => (
+                      <option key={tz} value={tz}>
+                        {tz}
+                      </option>
+                    ))}
+                  </select>
+                  <p className="text-xs text-mist mt-1">
+                    Used for &quot;today&quot; totals, reports, and daylight health checks.
+                  </p>
+                </div>
               </section>
 
               <section className="card-glow p-6 space-y-4">
@@ -339,10 +381,84 @@ export function SettingsPage() {
                   />
                   Enable background collector
                 </label>
+                <label className="flex items-center gap-2 text-sm text-mist">
+                  <input
+                    type="checkbox"
+                    checked={form.websocket_live}
+                    onChange={(e) => setForm({ ...form, websocket_live: e.target.checked })}
+                  />
+                  Live dashboard updates (SSE, polls PVS every 5s)
+                </label>
               </section>
             </div>
 
             <div className="space-y-6">
+              <section className="card-glow p-6 space-y-4">
+                <h2 className="text-lg font-semibold flex items-center gap-2 text-cyan-glow">
+                  <Bell className="w-5 h-5" />
+                  Notifications
+                </h2>
+                <p className="text-sm text-mist">
+                  Webhook (Discord/Slack) or ntfy.sh when new health alerts fire.
+                </p>
+                <label className="flex items-center gap-2 text-sm">
+                  <input
+                    type="checkbox"
+                    checked={form.notify_enabled}
+                    onChange={(e) => setForm({ ...form, notify_enabled: e.target.checked })}
+                  />
+                  Enable notifications
+                </label>
+                <input
+                  className="input-dark"
+                  placeholder="Webhook URL (optional)"
+                  value={form.notify_webhook_url}
+                  onChange={(e) =>
+                    setForm({ ...form, notify_webhook_url: e.target.value })
+                  }
+                />
+                <input
+                  className="input-dark"
+                  placeholder="ntfy topic or URL (optional)"
+                  value={form.notify_ntfy_topic}
+                  onChange={(e) => setForm({ ...form, notify_ntfy_topic: e.target.value })}
+                />
+                <div>
+                  <label className="text-xs text-mist block mb-1">Minimum severity</label>
+                  <select
+                    className="input-dark"
+                    value={form.notify_min_severity}
+                    onChange={(e) =>
+                      setForm({
+                        ...form,
+                        notify_min_severity: e.target.value as "warning" | "critical",
+                      })
+                    }
+                  >
+                    <option value="critical">Critical only</option>
+                    <option value="warning">Warning and critical</option>
+                  </select>
+                </div>
+                <button
+                  type="button"
+                  disabled={testingNotify}
+                  onClick={async () => {
+                    setTestingNotify(true);
+                    try {
+                      const res = await settingsApi.testNotify();
+                      setMessage(res.message);
+                    } catch (e) {
+                      setMessage(e instanceof Error ? e.message : "Test failed");
+                    } finally {
+                      setTestingNotify(false);
+                    }
+                  }}
+                  className="text-sm text-cyan-glow border border-cyan/30 px-3 py-2 rounded-lg hover:bg-cyan/10"
+                >
+                  {testingNotify ? "Sending…" : "Send test notification"}
+                </button>
+              </section>
+
               <section className="card-glow p-6 space-y-4">
                 <h2 className="text-lg font-semibold flex items-center gap-2 text-cyan-glow">
                   <Cpu className="w-5 h-5" />

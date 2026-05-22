@@ -1,9 +1,10 @@
 import { NavLink, Outlet, useNavigate } from "react-router-dom";
-import { HeartPulse, Home, LogOut, Settings, Sun, Zap } from "lucide-react";
+import { BarChart3, HeartPulse, Home, LogOut, Settings, Sun, Zap } from "lucide-react";
 import { useAuth } from "../lib/auth";
 const links = [
   { to: "/", icon: Home, label: "Dashboard" },
   { to: "/inverters", icon: Sun, label: "Inverters" },
+  { to: "/reports", icon: BarChart3, label: "Reports" },
   { to: "/health", icon: HeartPulse, label: "Health" },
   { to: "/system", icon: Zap, label: "System" },
   { to: "/settings", icon: Settings, label: "Settings" },

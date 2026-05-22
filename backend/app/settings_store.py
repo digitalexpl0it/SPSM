@@ -20,6 +20,13 @@ KEYS = {
     "temp_unit": "f",
     "temp_warning": "",
     "temp_critical": "",
+    "site_timezone": "America/Los_Angeles",
+    "notify_enabled": "false",
+    "notify_webhook_url": "",
+    "notify_ntfy_topic": "",
+    "notify_min_severity": "critical",
+    "co2_kg_per_kwh": "0.4",
+    "temp_coefficient_pct_per_c": "-0.30",
 }
 
 
@@ -37,6 +44,10 @@ def inverter_gauge_max_w_from_settings(settings: dict[str, str]) -> int | None:
 
 def battery_enabled_from_settings(settings: dict[str, str]) -> bool:
     return settings.get("battery_enabled", "false").lower() == "true"
+
+
+def site_timezone_from_settings(settings: dict[str, str]) -> str:
+    return (settings.get("site_timezone") or "").strip() or "America/Los_Angeles"
 
 
 # Hot-climate typical panel temp → industry max rated (149°F / 65°C, 185°F / 85°C)

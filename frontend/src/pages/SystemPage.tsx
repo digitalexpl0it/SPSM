@@ -3,7 +3,9 @@ import { Activity, ChevronDown, HardDrive, Loader2, RefreshCw, Wifi } from "luci
 import { Pvs6Unit } from "../components/Pvs6Unit";
 import { SolarThrobber } from "../components/SolarThrobber";
 import { dataApi, settingsApi } from "../lib/api";
-import { formatChartDateTime, parseApiTimestamp } from "../lib/formatChartDateTime";
+import { formatChartDateTime } from "../lib/formatChartDateTime";
+import { getSiteTimezone, loadSiteSettings } from "../lib/siteSettings";
+import { isSnapshotRecent } from "../lib/snapshotStale";
 
 const LABELS: Record<string, string> = {
   serialnum: "Serial number",
@@ -20,9 +22,6 @@ const LABELS: Record<string, string> = {
   lmac: "MAC address",
   flashwear_type_b: "eMMC flash wear",
 };
-
-/** Snapshots older than this are treated as stale for the status indicator. */
-const STALE_MS = 10 * 60 * 1000;
 
 function formatSystemRows(system: Record<string, unknown>): [string, string][] {
   const rows: [string, string][] = [];
@@ -42,12 +41,6 @@ function latestSnapshotTs(systemTs: string | null, metersTs: string | null): str
   return systemTs >= metersTs ? systemTs : metersTs;
 }
 
-function isRecent(ts: string | null): boolean {
-  if (!ts) return false;
-  const t = parseApiTimestamp(ts).getTime();
-  return !Number.isNaN(t) && Date.now() - t < STALE_MS;
-}
-
 export function SystemPage() {
   const [system, setSystem] = useState<Record<string, unknown>>({});
   const [meters, setMeters] = useState<Record<string, unknown>>({});
@@ -58,6 +51,7 @@ export function SystemPage() {
   const [snapshotAt, setSnapshotAt] = useState<string | null>(null);
   const [dataSource, setDataSource] = useState<"cached" | "live">("cached");
   const [refreshError, setRefreshError] = useState<string | null>(null);
+  const [siteTz, setSiteTz] = useState<string | undefined>();
 
   const applyTelemetry = useCallback(
     (telemetry: Record<string, unknown> | undefined, ts: string | null, source: "cached" | "live") => {
@@ -76,6 +70,7 @@ export function SystemPage() {
       dataApi.devices("meters"),
     ]);
 
+    setSiteTz(getSiteTimezone(settings));
     setSiteMeta({
       site_name: settings.site_name || "",
       site_id: settings.site_id || "",
@@ -95,7 +90,7 @@ export function SystemPage() {
       ts,
       "cached"
     );
-    setConnected(isRecent(ts));
+    setConnected(isSnapshotRecent(ts));
     setRefreshError(null);
   }, [applyTelemetry]);
 
@@ -136,7 +131,7 @@ export function SystemPage() {
   const allRows = [...rows, ...metaRows.filter(([label]) => !rows.some(([r]) => r === label))];
 
   const updatedLabel = snapshotAt
-    ? formatChartDateTime(snapshotAt)
+    ? formatChartDateTime(snapshotAt, siteTz)
     : null;
 
   return (
@@ -151,7 +146,7 @@ export function SystemPage() {
           {updatedLabel && (
             <p className="text-xs text-mist text-right max-w-xs">
               {dataSource === "live" ? "Live from PVS" : "From collector"}: {updatedLabel}
-              {dataSource === "cached" && !isRecent(snapshotAt) && (
+              {dataSource === "cached" && !isSnapshotRecent(snapshotAt) && (
                 <span className="text-amber-400/90"> · may be stale</span>
               )}
             </p>
