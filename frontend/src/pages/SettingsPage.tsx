@@ -13,6 +13,7 @@ import {
   Thermometer,
   BarChart3,
   Bell,
+  Archive,
   Database,
   Timer,
   UserCircle,
@@ -37,13 +38,14 @@ import {
 } from "../lib/temperatureSettings";
 import { AccountSettings } from "../components/AccountSettings";
 import { BackupSettings } from "../components/BackupSettings";
+import { DatabaseSettings } from "../components/DatabaseSettings";
 import { SolarThrobber } from "../components/SolarThrobber";
 import { Toggle } from "../components/Toggle";
 import { settingsApi } from "../lib/api";
 import { useAuth } from "../lib/auth";
 import { formatErrorMessage, useToast } from "../lib/toast";
 
-type SettingsTab = "system" | "notifications" | "accounts" | "backup";
+type SettingsTab = "system" | "notifications" | "accounts" | "backup" | "database";
 
 /** Placeholder only — not a real device serial. */
 const EXAMPLE_PVS_SERIAL = "ZT223485000000W0000";
@@ -65,7 +67,8 @@ const TABS: { id: SettingsTab; label: string; icon: typeof Wrench }[] = [
   { id: "system", label: "System", icon: Wrench },
   { id: "notifications", label: "Notifications", icon: Bell },
   { id: "accounts", label: "Accounts", icon: UserCircle },
-  { id: "backup", label: "Backup", icon: Database },
+  { id: "backup", label: "Backup", icon: Archive },
+  { id: "database", label: "Database", icon: Database },
 ];
 
 export function SettingsPage() {
@@ -259,7 +262,7 @@ export function SettingsPage() {
       <header>
         <h1 className="text-2xl font-bold text-gradient">Settings</h1>
         <p className="text-sm text-mist mt-1">
-          System, notifications, accounts, and backup.
+          System, notifications, accounts, backup, and database.
         </p>
       </header>
 
@@ -882,6 +885,8 @@ export function SettingsPage() {
       {tab === "accounts" && <AccountSettings />}
 
       {tab === "backup" && <BackupSettings />}
+
+      {tab === "database" && <DatabaseSettings />}
     </div>
   );
 }

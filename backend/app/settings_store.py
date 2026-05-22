@@ -40,6 +40,9 @@ KEYS = {
     "monthly_report_last_sent": "",
     "co2_kg_per_kwh": "0.4",
     "temp_coefficient_pct_per_c": "-0.30",
+    "data_retention_enabled": "false",
+    "data_retention_years": "5",
+    "data_retention_last_purge": "",
 }
 
 

@@ -13,6 +13,7 @@ from app.database import async_session, engine
 from app.database import Base
 from app.models import DeviceSnapshot, Reading
 from app.pvs_client import PvsClient, parse_livedata
+from app.data_retention import maybe_auto_purge
 from app.monthly_report import maybe_send_monthly_report
 from app.rollup import upsert_rollups_for_reading
 from app.settings_store import (
@@ -118,6 +119,20 @@ async def run_loop():
                 await maybe_send_monthly_report(session)
         except Exception as e:
             logger.exception("Monthly report check failed: %s", e)
+
+        try:
+            async with async_session() as session:
+                purged = await maybe_auto_purge(session)
+                if purged:
+                    total = sum(purged["deleted"].values())
+                    logger.info(
+                        "Retention purge: removed %s rows older than %s years (cutoff %s)",
+                        total,
+                        purged["retention_years"],
+                        purged["cutoff"],
+                    )
+        except Exception as e:
+            logger.exception("Retention purge failed: %s", e)
 
         await asyncio.sleep(max(10, interval))
 

@@ -9,6 +9,7 @@ from app.database import Base, engine, async_session
 from app.routers import (
     auth,
     backup,
+    database_admin,
     data,
     health_alerts,
     live_stream,
@@ -53,6 +54,7 @@ app.include_router(reports.router)
 app.include_router(live_stream.router)
 app.include_router(metrics.router)
 app.include_router(backup.router)
+app.include_router(database_admin.router)
 
 
 @app.get("/api/health")

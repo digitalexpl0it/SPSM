@@ -275,6 +275,41 @@ export interface BackupImportResult {
   exported_at?: string;
 }
 
+export interface DatabaseStats {
+  counts: BackupStats;
+  oldest_reading: string | null;
+  newest_reading: string | null;
+  oldest_device_snapshot: string | null;
+  newest_device_snapshot: string | null;
+  database_size_bytes: number | null;
+  retention: {
+    enabled: boolean;
+    years: number;
+    cutoff: string | null;
+    last_purge: string | null;
+    rows_older_than_cutoff: Record<string, number> | null;
+  };
+}
+
+export const databaseApi = {
+  stats: () => api<DatabaseStats>("/api/database/stats"),
+  updateRetention: (body: { data_retention_enabled: boolean; data_retention_years: number }) =>
+    api<{ ok: boolean; retention: DatabaseStats["retention"] }>("/api/database/retention", {
+      method: "PUT",
+      body: JSON.stringify(body),
+    }),
+  purge: (years?: number) => {
+    const q = years != null ? `?years=${years}` : "";
+    return api<{
+      ok: boolean;
+      message: string;
+      deleted: Record<string, number>;
+      cutoff: string;
+      retention_years: number;
+    }>(`/api/database/purge${q}`, { method: "POST" });
+  },
+};
+
 export const backupApi = {
   stats: () => api<BackupStats>("/api/backup/stats"),
   downloadExport: async () => {

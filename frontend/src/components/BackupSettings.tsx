@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { Database, Download, Loader2, Upload } from "lucide-react";
+import { Archive, Download, Loader2, Upload } from "lucide-react";
 import { backupApi, type BackupStats } from "../lib/api";
 import { useAuth } from "../lib/auth";
 import { clearSiteSettingsCache } from "../lib/siteSettings";
@@ -94,7 +94,7 @@ export function BackupSettings() {
     <div className="space-y-6 max-w-2xl">
       <section className="card-glow p-6 space-y-4">
         <h2 className="text-lg font-semibold flex items-center gap-2 text-cyan-glow">
-          <Database className="w-5 h-5" />
+          <Archive className="w-5 h-5" />
           Export backup
         </h2>
         <p className="text-sm text-mist">
