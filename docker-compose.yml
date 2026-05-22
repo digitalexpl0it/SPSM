@@ -24,6 +24,7 @@ services:
       DATABASE_URL: postgresql+asyncpg://spsm:spsm_dev_change_me@db:5432/spsm
       SECRET_KEY: ${SECRET_KEY:-change-me-in-production-use-openssl-rand-hex-32}
       CORS_ORIGINS: http://localhost:5173,http://localhost:3000
+      PORTAL_PUBLIC_URL: ${PORTAL_PUBLIC_URL:-}
     depends_on:
       db:
         condition: service_healthy

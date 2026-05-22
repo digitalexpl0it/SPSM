@@ -7,7 +7,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.auth import get_current_user
 from app.database import get_db
 from app.models import User
-from app.notifier import send_notification
+from app.notifier import explain_notification_block, send_notification
 from app.pvs_client import PvsClient
 from app.settings_store import get_all_settings, get_setting, is_setup_complete, set_setting
 from app.timezone_util import DEFAULT_TIMEZONE
@@ -45,6 +45,7 @@ class SettingsUpdate(BaseModel):
     notify_smtp_password: str | None = None
     notify_smtp_from: str | None = None
     notify_smtp_to: str | None = None
+    portal_public_url: str | None = None
     co2_kg_per_kwh: float | None = Field(None, ge=0, le=2)
     temp_coefficient_pct_per_c: float | None = Field(None, ge=-1, le=0)
     setup_complete: bool | None = None
@@ -138,19 +139,24 @@ async def test_notify(
     db: Annotated[AsyncSession, Depends(get_db)],
 ):
     settings = await get_all_settings(db)
+    block = explain_notification_block(settings, is_test=True)
+    if block:
+        raise HTTPException(status_code=400, detail=block)
+
     ok = await send_notification(
         settings,
-        title="Test alert",
-        message="SPSM notification test — check your configured channel(s).",
+        title="Alert preview",
+        message="Sample alert — see email for Warning and Critical examples.",
         severity="warning",
         alert_id="test",
+        is_test=True,
     )
     if not ok:
         raise HTTPException(
             status_code=400,
             detail=(
-                "Notification not sent. Enable notifications and configure at least one of: "
-                "webhook, ntfy, or SMTP enabled with valid saved settings."
+                "Notification could not be delivered. Check host, credentials, and recipient "
+                "for your enabled channel(s), then try again. See API logs for SMTP/webhook errors."
             ),
         )
     return {"ok": True, "message": "Test notification sent"}

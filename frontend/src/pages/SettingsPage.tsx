@@ -87,6 +87,7 @@ export function SettingsPage() {
     notify_smtp_password: "",
     notify_smtp_from: "",
     notify_smtp_to: "",
+    portal_public_url: "",
     setup_complete: false,
   });
   const [loading, setLoading] = useState(true);
@@ -145,6 +146,9 @@ export function SettingsPage() {
           notify_smtp_password: s.notify_smtp_password || "",
           notify_smtp_from: s.notify_smtp_from || "",
           notify_smtp_to: s.notify_smtp_to || "",
+          portal_public_url:
+            s.portal_public_url?.trim() ||
+            (typeof window !== "undefined" ? window.location.origin : ""),
           setup_complete: s.setup_complete === "true",
         });
       })
@@ -195,8 +199,12 @@ export function SettingsPage() {
         temp_critical,
         ...rest
       } = form;
+      const portalUrl =
+        form.portal_public_url.trim() ||
+        (typeof window !== "undefined" ? window.location.origin : "");
       await settingsApi.update({
         ...rest,
+        portal_public_url: portalUrl,
         inverter_gauge_max_w: inverter_gauge_auto ? 0 : inverter_gauge_max_w,
         temp_warning: temp_threshold_auto ? 0 : temp_warning,
         temp_critical: temp_threshold_auto ? 0 : temp_critical,
@@ -602,6 +610,34 @@ export function SettingsPage() {
               description="Master switch for all alert channels below"
             />
 
+            <div>
+              <label className="text-xs text-mist block mb-1">Portal URL (email links)</label>
+              <input
+                className="input-dark mono text-sm"
+                placeholder="http://192.168.1.50:5173"
+                value={form.portal_public_url}
+                onChange={(e) => setForm({ ...form, portal_public_url: e.target.value })}
+              />
+              <p className="text-xs text-mist mt-1">
+                Used for &quot;View Health dashboard&quot; in alert emails. Use the same address you
+                open in your browser (LAN IP, not localhost). Saved automatically from this page
+                when you save settings.
+              </p>
+              <button
+                type="button"
+                className="mt-2 text-xs text-cyan-glow hover:underline"
+                onClick={() =>
+                  setForm({
+                    ...form,
+                    portal_public_url:
+                      typeof window !== "undefined" ? window.location.origin : "",
+                  })
+                }
+              >
+                Use current browser address
+              </button>
+            </div>
+
             <div className="border-t border-surface/80 pt-4 space-y-4">
               <Toggle
                 checked={form.notify_webhook_enabled}
@@ -742,7 +778,8 @@ export function SettingsPage() {
           </section>
 
           <p className="text-xs text-mist">
-            Save settings before sending a test — the server uses your saved configuration.
+            Save settings before sending a test — the server uses your saved configuration. The test
+            email shows sample Warning and Critical alerts (same layout as real health emails).
           </p>
 
           <div className="flex flex-wrap gap-3">

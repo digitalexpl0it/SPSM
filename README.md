@@ -155,6 +155,9 @@ curl -sk -b /tmp/pvs.txt "https://$PVS_IP/vars?match=livedata&fmt=obj" | head
 | `notify_ntfy_enabled` + `notify_ntfy_topic` | [ntfy.sh](https://ntfy.sh) topic or full URL |
 | `notify_smtp_enabled` + SMTP fields | Email via SMTP with STARTTLS (typical port **587**) |
 | `notify_min_severity` | `critical` or `warning` — minimum level that triggers a send |
+| `portal_public_url` | Base URL for links in alert emails (e.g. `http://192.168.1.50:5173`) — set in **Settings → Notifications** or `PORTAL_PUBLIC_URL` in `.env` |
+| `PORTAL_PUBLIC_URL` | Optional env override for email links (same as above; used if UI value is empty) |
+| `CORS_ORIGINS` | Allowed browser origins for the API (fallback for email links only if portal URL unset) |
 
 Settings are stored in the database and editable from the UI.
 

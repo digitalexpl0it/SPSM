@@ -43,6 +43,7 @@ async def run_health_with_persistence(db: AsyncSession) -> dict:
                     message=alert.message,
                     severity=alert.severity,
                     alert_id=alert.id,
+                    detail=alert.detail,
                 ):
                     existing.last_notified_at = now
         else:
@@ -63,6 +64,7 @@ async def run_health_with_persistence(db: AsyncSession) -> dict:
                 message=alert.message,
                 severity=alert.severity,
                 alert_id=alert.id,
+                detail=alert.detail,
             ):
                 ev.last_notified_at = now
 
