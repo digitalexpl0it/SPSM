@@ -74,15 +74,30 @@ export interface DailyReportDay {
   sample_count: number;
 }
 
+export interface ReportTotals {
+  pv_kwh: number;
+  load_kwh: number;
+  import_kwh: number;
+  export_kwh: number;
+  co2_kg: number;
+}
+
+export interface ReportPeriod {
+  start: string;
+  end: string;
+}
+
 export interface DailyReportResponse {
   timezone: string;
+  period: ReportPeriod;
   days: DailyReportDay[];
-  totals: {
-    pv_kwh: number;
-    load_kwh: number;
-    import_kwh: number;
-    export_kwh: number;
-    co2_kg: number;
+  totals: ReportTotals;
+  year_ago: {
+    available: boolean;
+    period: ReportPeriod;
+    days_with_data: number;
+    days_in_period: number;
+    totals: ReportTotals;
   };
 }
 

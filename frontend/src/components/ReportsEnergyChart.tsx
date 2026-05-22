@@ -13,6 +13,8 @@ export interface ReportsChartPoint {
   date: string;
   pv: number;
   load: number;
+  export: number;
+  import: number;
 }
 
 interface Props {
@@ -37,6 +39,14 @@ export function ReportsEnergyChart({ data }: Props) {
               <stop offset="0%" stopColor="#22d3ee" stopOpacity={0.9} />
               <stop offset="100%" stopColor="#22d3ee" stopOpacity={0.25} />
             </linearGradient>
+            <linearGradient id="reportsExportGrad" x1="0" y1="0" x2="0" y2="1">
+              <stop offset="0%" stopColor="#34d399" stopOpacity={0.9} />
+              <stop offset="100%" stopColor="#34d399" stopOpacity={0.25} />
+            </linearGradient>
+            <linearGradient id="reportsImportGrad" x1="0" y1="0" x2="0" y2="1">
+              <stop offset="0%" stopColor="#a855f7" stopOpacity={0.9} />
+              <stop offset="100%" stopColor="#a855f7" stopOpacity={0.25} />
+            </linearGradient>
           </defs>
           <CartesianGrid stroke="#1a1a22" strokeDasharray="3 3" />
           <XAxis dataKey="date" stroke="#6b7280" fontSize={11} tick={{ fill: "#94a3b8" }} />
@@ -53,22 +63,22 @@ export function ReportsEnergyChart({ data }: Props) {
               borderRadius: 12,
             }}
             labelStyle={{ color: "#67e8f9" }}
-            formatter={(value) => {
+            formatter={(value, name) => {
               const n = typeof value === "number" ? value : Number(value);
               return [
                 `${Number.isFinite(n) ? n.toFixed(2) : "—"} kWh`,
-                "",
+                String(name),
               ];
             }}
           />
-          <Legend />
+          <Legend wrapperStyle={{ fontSize: 11 }} />
           <Bar
             dataKey="pv"
             name="Solar"
             fill="url(#reportsPvGrad)"
             stroke="#fbbf24"
             strokeWidth={1}
-            radius={[4, 4, 0, 0]}
+            radius={[3, 3, 0, 0]}
           />
           <Bar
             dataKey="load"
@@ -76,7 +86,23 @@ export function ReportsEnergyChart({ data }: Props) {
             fill="url(#reportsLoadGrad)"
             stroke="#22d3ee"
             strokeWidth={1}
-            radius={[4, 4, 0, 0]}
+            radius={[3, 3, 0, 0]}
+          />
+          <Bar
+            dataKey="export"
+            name="Export"
+            fill="url(#reportsExportGrad)"
+            stroke="#34d399"
+            strokeWidth={1}
+            radius={[3, 3, 0, 0]}
+          />
+          <Bar
+            dataKey="import"
+            name="Import"
+            fill="url(#reportsImportGrad)"
+            stroke="#a855f7"
+            strokeWidth={1}
+            radius={[3, 3, 0, 0]}
           />
         </BarChart>
       </ResponsiveContainer>

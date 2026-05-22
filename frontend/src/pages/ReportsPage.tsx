@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from "react";
 import { BarChart3, Download, Home, Leaf, Loader2, PlugZap, Sun } from "lucide-react";
 import { Link } from "react-router-dom";
 import { ReportsEnergyChart } from "../components/ReportsEnergyChart";
+import { ReportsPeriodComparison } from "../components/ReportsPeriodComparison";
 import { StatCard } from "../components/StatCard";
 import { SolarThrobber } from "../components/SolarThrobber";
 import { reportsApi, type DailyReportResponse } from "../lib/api";
@@ -63,6 +64,8 @@ export function ReportsPage() {
       date: d.date.slice(5),
       pv: d.pv_kwh,
       load: d.load_kwh,
+      export: d.export_kwh,
+      import: d.import_kwh,
     })) ?? [];
 
   return (
@@ -137,6 +140,20 @@ export function ReportsPage() {
               accent="purple"
             />
           </div>
+
+          {data.year_ago.available && (
+            <ReportsPeriodComparison
+              periodLabel={`${data.period.start.slice(5)} – ${data.period.end.slice(5)}`}
+              current={data.totals}
+              prior={data.year_ago.totals}
+              priorPeriod={data.year_ago.period}
+              coverageNote={
+                data.year_ago.days_with_data < data.year_ago.days_in_period
+                  ? `${data.year_ago.days_with_data} of ${data.year_ago.days_in_period} days with data last year`
+                  : undefined
+              }
+            />
+          )}
 
           <ReportsEnergyChart data={chartData} />
 
