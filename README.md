@@ -37,7 +37,7 @@ Daily PV / load / import / export, summary cards, bar chart, year-over-year comp
 - **Micro-inverters** — per-panel power, temperature, voltage, lifetime energy
 - **System** — PVS supervisor info, optional raw meter dump
 - **Reports** — daily PV / load / grid import & export, CO₂ estimate, 7/30/90-day ranges, year-over-year comparison, CSV export, weakest-panel snapshot
-- **Settings** — tabbed UI (**System**, **Notifications**, **Accounts**); toggle switches; toast feedback on save and connection/notify tests
+- **Settings** — tabbed UI (**System**, **Notifications**, **Accounts**, **Backup**); toggle switches; toast feedback on save and connection/notify tests; full gzip backup export/import for migration
 - **Notifications** — master enable plus per-channel toggles for **webhook** (Discord/Slack), **ntfy**, and **SMTP email** (STARTTLS on port 587, e.g. [Mailtrap](https://mailtrap.io) live SMTP); optional **monthly report** email (previous calendar month summary, sent on the 1st in site timezone)
 - **Accounts** — admin user management (create / edit / delete portal users)
 - **System health** — rule-based alerts with history; optional push on new critical/warning events (debounced)
@@ -184,6 +184,19 @@ Enable **SMTP email** on the Notifications tab, save, then use **Send test notif
 #### Monthly report email
 
 On **Settings → Notifications**, the right column has **Monthly report**. You must fill SMTP host, from, and to (same fields as alert email) before the toggle can be turned on. The collector sends one email on the **1st** of each month for the **previous calendar month** (PV, load, grid import/export, CO₂, month-over-month %). Use **Send sample monthly report** to preview after saving SMTP settings. This is independent of the alert **Enable notifications** master switch.
+
+### Backup and restore (migration)
+
+**Settings → Backup** (admin only) exports a gzip JSON file with settings, readings, rollups, device snapshots, health history, and user password hashes. Import that file on a new install after signing in once.
+
+Typical migration:
+
+1. On the **old** portal: **Download full backup** and store the `.json.gz` somewhere safe (contains SMTP secrets).
+2. Install SPSM on the new host, create your admin account, sign in.
+3. **Settings → Backup** → enable **Import settings** and **Import historical data**, leave **Import portal users** off to keep your new login, enable **Replace existing data first**, type `REPLACE`, and choose the backup file.
+4. Open **Settings → System** and run **Test connection** if the PVS IP changed on the new network.
+
+Large sites may take a minute to export or import. Maximum upload size is 512 MB.
 
 ### Backfill chart rollups
 

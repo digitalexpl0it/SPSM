@@ -258,3 +258,80 @@ export interface DeviceSnapshot {
   category: string;
   payload: Record<string, unknown>;
 }
+
+export interface BackupStats {
+  app_settings: number;
+  users: number;
+  readings: number;
+  device_snapshots: number;
+  reading_rollups: number;
+  health_events: number;
+}
+
+export interface BackupImportResult {
+  ok: boolean;
+  message: string;
+  imported: Record<string, number>;
+  exported_at?: string;
+}
+
+export const backupApi = {
+  stats: () => api<BackupStats>("/api/backup/stats"),
+  downloadExport: async () => {
+    const token = localStorage.getItem("token");
+    try {
+      const res = await fetch(apiUrl("/api/backup/export"), {
+        headers: token ? { Authorization: `Bearer ${token}` } : {},
+      });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({ detail: res.statusText }));
+        throw new Error(formatApiDetail(err.detail) || res.statusText || "Export failed");
+      }
+      const blob = await res.blob();
+      const disp = res.headers.get("Content-Disposition");
+      const match = disp?.match(/filename="?([^";]+)"?/);
+      const name =
+        match?.[1] || `spsm-backup-${new Date().toISOString().slice(0, 10)}.json.gz`;
+      const a = document.createElement("a");
+      a.href = URL.createObjectURL(blob);
+      a.download = name;
+      a.click();
+      URL.revokeObjectURL(a.href);
+    } catch (e) {
+      throw formatNetworkError(e);
+    }
+  },
+  import: async (
+    file: File,
+    opts: {
+      import_settings: boolean;
+      import_historical_data: boolean;
+      import_users: boolean;
+      replace_existing: boolean;
+    }
+  ) => {
+    const token = localStorage.getItem("token");
+    const params = new URLSearchParams({
+      import_settings: String(opts.import_settings),
+      import_historical_data: String(opts.import_historical_data),
+      import_users: String(opts.import_users),
+      replace_existing: String(opts.replace_existing),
+    });
+    const form = new FormData();
+    form.append("file", file);
+    try {
+      const res = await fetch(apiUrl(`/api/backup/import?${params}`), {
+        method: "POST",
+        headers: token ? { Authorization: `Bearer ${token}` } : {},
+        body: form,
+      });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({ detail: res.statusText }));
+        throw new Error(formatApiDetail(err.detail) || res.statusText || "Import failed");
+      }
+      return (await res.json()) as BackupImportResult;
+    } catch (e) {
+      throw formatNetworkError(e);
+    }
+  },
+};
