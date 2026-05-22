@@ -192,7 +192,8 @@ export function SettingsPage() {
       {tab === "system" && (
         <form onSubmit={save} className="space-y-6">
           <div className="grid gap-6 lg:grid-cols-2 lg:items-start">
-            <section className="card-glow p-6 space-y-4 h-full">
+            <div className="space-y-6">
+            <section className="card-glow p-6 space-y-4">
               <h2 className="text-lg font-semibold flex items-center gap-2 text-cyan-glow">
                 <Server className="w-5 h-5" />
                 PVS connection
@@ -277,7 +278,6 @@ export function SettingsPage() {
               )}
             </section>
 
-            <div className="space-y-6">
               <section className="card-glow p-6 space-y-4">
                 <h2 className="text-lg font-semibold flex items-center gap-2">
                   <Home className="w-5 h-5 text-purple-400" />
@@ -303,6 +303,46 @@ export function SettingsPage() {
                 />
               </section>
 
+              <section className="card-glow p-6 space-y-4">
+                <h2 className="text-lg font-semibold flex items-center gap-2">
+                  <Timer className="w-5 h-5" />
+                  Collector
+                </h2>
+                <div>
+                  <label className="text-xs text-mist block mb-1">Poll interval</label>
+                  <div className="flex items-center gap-2">
+                    <input
+                      type="number"
+                      min={10}
+                      max={3600}
+                      className="input-dark w-28"
+                      value={form.poll_interval_seconds}
+                      onChange={(e) =>
+                        setForm({
+                          ...form,
+                          poll_interval_seconds: parseInt(e.target.value, 10) || 10,
+                        })
+                      }
+                    />
+                    <span className="text-sm text-mist">seconds</span>
+                  </div>
+                  <p className="text-xs text-mist mt-1">
+                    How often the collector pulls data from your PVS (10–3600).{" "}
+                    <span className="text-cyan/80">60 = once per minute.</span>
+                  </p>
+                </div>
+                <label className="flex items-center gap-2 text-sm text-mist">
+                  <input
+                    type="checkbox"
+                    checked={form.collector_enabled}
+                    onChange={(e) => setForm({ ...form, collector_enabled: e.target.checked })}
+                  />
+                  Enable background collector
+                </label>
+              </section>
+            </div>
+
+            <div className="space-y-6">
               <section className="card-glow p-6 space-y-4">
                 <h2 className="text-lg font-semibold flex items-center gap-2 text-cyan-glow">
                   <Cpu className="w-5 h-5" />
@@ -481,44 +521,6 @@ export function SettingsPage() {
                     onChange={(e) => setForm({ ...form, battery_enabled: e.target.checked })}
                   />
                   Enable battery monitoring
-                </label>
-              </section>
-
-              <section className="card-glow p-6 space-y-4">
-                <h2 className="text-lg font-semibold flex items-center gap-2">
-                  <Timer className="w-5 h-5" />
-                  Collector
-                </h2>
-                <div>
-                  <label className="text-xs text-mist block mb-1">Poll interval</label>
-                  <div className="flex items-center gap-2">
-                    <input
-                      type="number"
-                      min={10}
-                      max={3600}
-                      className="input-dark w-28"
-                      value={form.poll_interval_seconds}
-                      onChange={(e) =>
-                        setForm({
-                          ...form,
-                          poll_interval_seconds: parseInt(e.target.value, 10) || 10,
-                        })
-                      }
-                    />
-                    <span className="text-sm text-mist">seconds</span>
-                  </div>
-                  <p className="text-xs text-mist mt-1">
-                    How often the collector pulls data from your PVS (10–3600).{" "}
-                    <span className="text-cyan/80">60 = once per minute.</span>
-                  </p>
-                </div>
-                <label className="flex items-center gap-2 text-sm text-mist">
-                  <input
-                    type="checkbox"
-                    checked={form.collector_enabled}
-                    onChange={(e) => setForm({ ...form, collector_enabled: e.target.checked })}
-                  />
-                  Enable background collector
                 </label>
               </section>
             </div>
