@@ -1,5 +1,14 @@
 import { NavLink, Outlet, useNavigate } from "react-router-dom";
-import { BarChart3, HeartPulse, Home, LogOut, Settings, Sun, Zap } from "lucide-react";
+import {
+  BarChart3,
+  CircleHelp,
+  HeartPulse,
+  Home,
+  LogOut,
+  Settings,
+  Sun,
+  Zap,
+} from "lucide-react";
 import { useAuth } from "../lib/auth";
 const links = [
   { to: "/", icon: Home, label: "Dashboard" },
@@ -8,6 +17,7 @@ const links = [
   { to: "/health", icon: HeartPulse, label: "Health" },
   { to: "/system", icon: Zap, label: "System" },
   { to: "/settings", icon: Settings, label: "Settings" },
+  { to: "/help", icon: CircleHelp, label: "Help" },
 ];
 
 export function Layout() {

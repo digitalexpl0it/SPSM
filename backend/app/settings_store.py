@@ -1,6 +1,7 @@
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.health_rules import default_health_rule_keys
 from app.models import AppSetting
 
 # Keys stored in app_settings
@@ -43,6 +44,7 @@ KEYS = {
     "data_retention_enabled": "false",
     "data_retention_years": "5",
     "data_retention_last_purge": "",
+    **default_health_rule_keys(),
 }
 
 

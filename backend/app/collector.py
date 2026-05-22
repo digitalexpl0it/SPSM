@@ -14,6 +14,7 @@ from app.database import Base
 from app.models import DeviceSnapshot, Reading
 from app.pvs_client import PvsClient, parse_livedata
 from app.data_retention import maybe_auto_purge
+from app.health_runner import maybe_run_health_persistence
 from app.monthly_report import maybe_send_monthly_report
 from app.rollup import upsert_rollups_for_reading
 from app.settings_store import (
@@ -119,6 +120,12 @@ async def run_loop():
                 await maybe_send_monthly_report(session)
         except Exception as e:
             logger.exception("Monthly report check failed: %s", e)
+
+        try:
+            async with async_session() as session:
+                await maybe_run_health_persistence(session)
+        except Exception as e:
+            logger.exception("Health persistence failed: %s", e)
 
         try:
             async with async_session() as session:

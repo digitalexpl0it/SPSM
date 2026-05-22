@@ -143,13 +143,23 @@ export function HealthPage() {
             <summary className="text-sm font-medium text-cyan-glow/90 flex items-center gap-2 cursor-pointer select-none list-none [&::-webkit-details-marker]:hidden">
               <Info className="w-4 h-4 shrink-0" />
               What we check
-              <span className="text-xs font-normal text-mist/60">8 rules</span>
+              <span className="text-xs font-normal text-mist/60">configurable in Settings</span>
               <ChevronDown className="w-4 h-4 ml-auto shrink-0 transition-transform group-open:rotate-180" />
             </summary>
-            <ul className="mt-3 text-sm text-mist space-y-1.5 list-disc pl-5">
+            <p className="mt-3 text-xs text-mist">
+              Admins can enable, disable, and tune rules under{" "}
+              <a href="/settings?tab=health" className="text-cyan-glow hover:underline">
+                Settings → Health alerts
+              </a>
+              .
+            </p>
+            <ul className="mt-2 text-sm text-mist space-y-1.5 list-disc pl-5">
               <li>PVS reachable (quick login test)</li>
               <li>Collector gaps — no readings for ~10+ minutes</li>
-              <li>Daylight hours (UTC) with near-zero site PV for ~45 minutes</li>
+              <li>
+                Daylight hours with near-zero site PV for ~45 minutes (skipped during early
+                sunrise and late sunset ramp)
+              </li>
               <li>One inverter at ~0 W while others produce</li>
               <li>
                 Micro-inverter heatsink temperature —{" "}
@@ -242,6 +252,7 @@ export function HealthPage() {
                       <th>Severity</th>
                       <th>Issue</th>
                       <th>First seen</th>
+                      <th>Last seen</th>
                       <th>Status</th>
                     </tr>
                   </thead>
@@ -253,11 +264,19 @@ export function HealthPage() {
                         <td className="text-xs text-mist">
                           {formatChartDateTime(ev.first_seen, siteTz)}
                         </td>
+                        <td className="text-xs text-mist">
+                          {formatChartDateTime(ev.last_seen, siteTz)}
+                        </td>
                         <td className="text-xs">
-                          {ev.active ? (
+                          {ev.active && !ev.resolved_at ? (
                             <span className="text-amber-300">Active</span>
                           ) : (
-                            <span className="text-emerald-400/90">Resolved</span>
+                            <span className="text-emerald-400/90" title={ev.resolved_at ?? undefined}>
+                              Resolved
+                              {ev.resolved_at
+                                ? ` · ${formatChartDateTime(ev.resolved_at, siteTz)}`
+                                : ""}
+                            </span>
                           )}
                         </td>
                       </tr>

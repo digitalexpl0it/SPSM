@@ -37,7 +37,7 @@ Daily PV / load / import / export, summary cards, bar chart, year-over-year comp
 - **Micro-inverters** — per-panel power, temperature, voltage, lifetime energy
 - **System** — PVS supervisor info, optional raw meter dump
 - **Reports** — daily PV / load / grid import & export, CO₂ estimate, 7/30/90-day ranges, year-over-year comparison, CSV export, weakest-panel snapshot
-- **Settings** — tabbed UI (**System**, **Notifications**, **Accounts**, **Backup**, **Database**); toggle switches; toast feedback on save and connection/notify tests; full gzip backup export/import for migration; optional data retention with auto-purge
+- **Settings** — tabbed UI (**System**, **Notifications**, **Health alerts**, **Accounts**, **Backup**, **Database**); configurable health rules; full gzip backup export/import; optional data retention with auto-purge
 - **Notifications** — master enable plus per-channel toggles for **webhook** (Discord/Slack), **ntfy**, and **SMTP email** (STARTTLS on port 587, e.g. [Mailtrap](https://mailtrap.io) live SMTP); optional **monthly report** email (previous calendar month summary, sent on the 1st in site timezone)
 - **Accounts** — admin user management (create / edit / delete portal users)
 - **System health** — rule-based alerts with history; optional push on new critical/warning events (debounced)
@@ -45,6 +45,7 @@ Daily PV / load / import / export, summary cards, bar chart, year-over-year comp
 - **Pre-aggregated rollups** — faster week/month/year charts
 - **Prometheus** — `GET /metrics` on the API for external monitoring
 - **Setup wizard** — first-run flow when PVS is not configured
+- **Help** — in-app guide for every page and Settings tab
 
 Tested with PVS6 firmware **BUILD 61840+** (e.g. 61846). Older firmware may use different varserver paths.
 
@@ -162,6 +163,7 @@ curl -sk -b /tmp/pvs.txt "https://$PVS_IP/vars?match=livedata&fmt=obj" | head
 | `portal_public_url` | Base URL for links in alert and monthly report emails (e.g. `http://192.168.1.50:5173`) — set in **Settings → Notifications** or `PORTAL_PUBLIC_URL` in `.env` |
 | `monthly_report_enabled` | Email-only previous-month summary on the **1st** of each month (site timezone); requires SMTP host, from, and to configured |
 | `data_retention_enabled` / `data_retention_years` | Optional cap on historical data (1–50 years); auto-purge ~daily when enabled — **Settings → Database** |
+| `health_rule_*` | Per-rule enable flags and thresholds — **Settings → Health alerts** |
 | `PORTAL_PUBLIC_URL` | Optional env override for email links (same as above; used if UI value is empty) |
 | `CORS_ORIGINS` | Allowed browser origins for the API when using a separate API host |
 | `CORS_ALLOW_PRIVATE_NETWORKS` | Docker default `true` — allows `192.168.x.x` / `10.x` UI origins (phones on LAN) |

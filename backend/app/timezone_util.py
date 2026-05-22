@@ -10,6 +10,8 @@ DAYLIGHT_START_HOUR = 6
 DAYLIGHT_END_HOUR = 20
 # Skip “sharp drop” alerts in the late-day ramp (normal sunset, not clouds).
 SUNSET_RAMP_HOURS_BEFORE_END = 3
+# Skip “no production” alerts while the array is still waking up after dawn.
+SUNRISE_RAMP_HOURS_AFTER_START = 3
 
 
 def resolve_timezone(raw: str | None) -> ZoneInfo:
@@ -41,6 +43,16 @@ def is_daylight_local(tz_name: str | None, now: datetime | None = None) -> bool:
         now = now.replace(tzinfo=UTC)
     h = now.astimezone(resolve_timezone(tz_name)).hour
     return DAYLIGHT_START_HOUR <= h < DAYLIGHT_END_HOUR
+
+
+def is_sunrise_ramp_local(tz_name: str | None, now: datetime | None = None) -> bool:
+    """Early daylight hours when near-zero PV is normal as the sun comes up."""
+    now = now or datetime.now(UTC)
+    if now.tzinfo is None:
+        now = now.replace(tzinfo=UTC)
+    h = now.astimezone(resolve_timezone(tz_name)).hour
+    ramp_end = DAYLIGHT_START_HOUR + SUNRISE_RAMP_HOURS_AFTER_START
+    return DAYLIGHT_START_HOUR <= h < ramp_end
 
 
 def is_sunset_ramp_local(tz_name: str | None, now: datetime | None = None) -> bool:

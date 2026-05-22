@@ -15,19 +15,22 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.json_util import safe_float
 from app.models import DeviceSnapshot, Reading
 from app.pvs_client import PvsClient
+from app.health_rules import (
+    daylight_zero_pv_kw,
+    daylight_zero_pv_minutes,
+    gap_minutes_from_settings,
+    production_drop_ratio,
+    rule_enabled_by_id,
+)
 from app.settings_store import site_timezone_from_settings, temp_config_from_settings
-from app.timezone_util import is_daylight_local, is_sunset_ramp_local
+from app.timezone_util import is_daylight_local, is_sunrise_ramp_local, is_sunset_ramp_local
 
 logger = logging.getLogger(__name__)
 
 Severity = Literal["info", "warning", "critical"]
 
-# Tunable thresholds (future: move to app_settings)
-NO_DATA_GAP_MINUTES = 10
 DAYLIGHT_UTC_START = 14  # rough US solar window; site TZ would be better
 DAYLIGHT_UTC_END = 22
-DAYLIGHT_ZERO_PV_MINUTES = 45
-DAYLIGHT_ZERO_PV_KW = 0.05
 MIN_INVERTERS_FOR_STUCK_CHECK = 3
 STUCK_PRODUCING_KW = 0.05
 STUCK_ZERO_KW = 0.01
@@ -44,7 +47,6 @@ def _heatsink_to_f(raw: float, unit: str) -> float:
 PRODUCTION_DROP_RECENT_MIN = 15
 PRODUCTION_DROP_BASELINE_MIN = 60
 PRODUCTION_DROP_MIN_BASELINE_KW = 0.25
-PRODUCTION_DROP_RATIO = 0.45
 
 
 @dataclass
@@ -124,7 +126,10 @@ async def evaluate_site_health(
 
     poll_s = int(settings.get("poll_interval_seconds") or "60")
     collector_on = settings.get("collector_enabled", "true").lower() != "false"
-    gap_minutes = max(NO_DATA_GAP_MINUTES, (poll_s * 2) // 60)
+    gap_minutes = gap_minutes_from_settings(settings, poll_s)
+    zero_pv_minutes = daylight_zero_pv_minutes(settings)
+    zero_pv_kw = daylight_zero_pv_kw(settings)
+    drop_ratio = production_drop_ratio(settings)
     temp_cfg = temp_config_from_settings(settings)
     temp_unit = str(temp_cfg["unit"])
     warn_f = int(temp_cfg["warning_f"])
@@ -139,7 +144,7 @@ async def evaluate_site_health(
 
     # --- PVS reachability (live ping) ---
     pvs_ok, pvs_err = await _pvs_login_ok(settings)
-    if not pvs_ok:
+    if not pvs_ok and rule_enabled_by_id(settings, "pvs_offline"):
         alerts.append(
             HealthAlert(
                 id="pvs_offline",
@@ -154,7 +159,7 @@ async def evaluate_site_health(
 
     # --- Collector / readings gap ---
     if collector_on:
-        if latest is None:
+        if latest is None and rule_enabled_by_id(settings, "no_readings"):
             alerts.append(
                 HealthAlert(
                     id="no_readings",
@@ -167,7 +172,9 @@ async def evaluate_site_health(
         else:
             latest_ts = latest.ts if latest.ts.tzinfo else latest.ts.replace(tzinfo=UTC)
             age = now - latest_ts
-            if age > timedelta(minutes=gap_minutes):
+            if age > timedelta(minutes=gap_minutes) and rule_enabled_by_id(
+                settings, "collector_stale"
+            ):
                 mins = int(age.total_seconds() // 60)
                 alerts.append(
                     HealthAlert(
@@ -192,30 +199,36 @@ async def evaluate_site_health(
     )
     recent_rows = list(result.scalars().all())
 
-    # --- Daytime zero production ---
-    if _is_daylight(now, settings) and recent_rows:
-        window_start = now - timedelta(minutes=DAYLIGHT_ZERO_PV_MINUTES)
+    # --- Daytime zero production (skip early-morning sunrise ramp) ---
+    tz_name = site_timezone_from_settings(settings)
+    if (
+        rule_enabled_by_id(settings, "daylight_zero_pv")
+        and _is_daylight(now, settings)
+        and recent_rows
+        and not is_sunrise_ramp_local(tz_name, now)
+    ):
+        window_start = now - timedelta(minutes=zero_pv_minutes)
         window_rows = [r for r in recent_rows if (r.ts if r.ts.tzinfo else r.ts.replace(tzinfo=UTC)) >= window_start]
         if len(window_rows) >= 3:
             peak = max(safe_float(r.pv_kw) or 0 for r in window_rows)
-            if peak < DAYLIGHT_ZERO_PV_KW:
+            if peak < zero_pv_kw:
                 alerts.append(
                     HealthAlert(
                         id="daylight_zero_pv",
                         severity="warning",
                         title="No solar production (daylight)",
                         message=(
-                            f"Site PV has been below {DAYLIGHT_ZERO_PV_KW} kW for about "
-                            f"{DAYLIGHT_ZERO_PV_MINUTES} minutes during expected solar hours."
+                            f"Site PV has been below {zero_pv_kw} kW for about "
+                            f"{zero_pv_minutes} minutes during expected solar hours."
                         ),
                         detail="Could be cloudy weather, shutdown, or a system issue. Compare inverters and check the PVS.",
                     )
                 )
 
     # --- Sudden production drop (mid-day only; skip normal sunset ramp) ---
-    tz_name = site_timezone_from_settings(settings)
     if (
-        len(recent_rows) >= 5
+        rule_enabled_by_id(settings, "production_drop")
+        and len(recent_rows) >= 5
         and _is_daylight(now, settings)
         and not is_sunset_ramp_local(tz_name, now)
     ):
@@ -242,7 +255,7 @@ async def evaluate_site_health(
         )
         if (
             baseline_avg >= PRODUCTION_DROP_MIN_BASELINE_KW
-            and recent_avg < baseline_avg * PRODUCTION_DROP_RATIO
+            and recent_avg < baseline_avg * drop_ratio
         ):
             alerts.append(
                 HealthAlert(
@@ -261,7 +274,12 @@ async def evaluate_site_health(
             )
 
     # --- MID / transfer switch state ---
-    if latest and latest.mid_state is not None and latest.mid_state != 0:
+    if (
+        rule_enabled_by_id(settings, "mid_state")
+        and latest
+        and latest.mid_state is not None
+        and latest.mid_state != 0
+    ):
         alerts.append(
             HealthAlert(
                 id="mid_state",
@@ -288,7 +306,11 @@ async def evaluate_site_health(
                 continue
             powers.append((_inv_label(str(path), fields), _inv_power_kw(fields), _inv_temp_c(fields)))
 
-        if _is_daylight(now, settings) and len(powers) >= MIN_INVERTERS_FOR_STUCK_CHECK:
+        if (
+            rule_enabled_by_id(settings, "inverter_stuck")
+            and _is_daylight(now, settings)
+            and len(powers) >= MIN_INVERTERS_FOR_STUCK_CHECK
+        ):
             producing = [p for p in powers if p[1] >= STUCK_PRODUCING_KW]
             idle = [p for p in powers if p[1] < STUCK_ZERO_KW]
             if len(producing) >= 2 and idle:
@@ -318,7 +340,7 @@ async def evaluate_site_health(
         def _temp_line(lbl: str, raw: float) -> str:
             return f"{lbl} {int(raw)}°{unit_suffix}"
 
-        if hot:
+        if hot and rule_enabled_by_id(settings, "temperature"):
             lines = ", ".join(_temp_line(lbl, tc) for lbl, tc, _ in hot[:8])
             extra = f" (+{len(hot) - 8} more)" if len(hot) > 8 else ""
             alerts.append(
@@ -332,7 +354,7 @@ async def evaluate_site_health(
                     detail=f"{lines}{extra}",
                 )
             )
-        elif warm:
+        elif warm and rule_enabled_by_id(settings, "temperature"):
             lines = ", ".join(_temp_line(lbl, tc) for lbl, tc, _ in warm[:8])
             extra = f" (+{len(warm) - 8} more)" if len(warm) > 8 else ""
             alerts.append(
@@ -349,7 +371,10 @@ async def evaluate_site_health(
 
         # Scan payload for fault-like keys (cap to avoid noise)
         fault_count = 0
+        scan_inv_faults = rule_enabled_by_id(settings, "inv_fault_flags")
         for path, fields in inverters.items():
+            if not scan_inv_faults:
+                break
             if not isinstance(fields, dict) or fault_count >= 5:
                 continue
             slug = re.sub(r"[^a-z0-9]+", "_", str(path).lower())[:48]
@@ -380,7 +405,11 @@ async def evaluate_site_health(
         .limit(1)
     )
     sys_snap = sys_result.scalar_one_or_none()
-    if sys_snap and isinstance(sys_snap.payload, dict):
+    if (
+        sys_snap
+        and isinstance(sys_snap.payload, dict)
+        and rule_enabled_by_id(settings, "sys_fault_flags")
+    ):
         for key, val in sys_snap.payload.items():
             kl = str(key).lower()
             if not any(x in kl for x in ("fault", "alarm", "error", "fail")):

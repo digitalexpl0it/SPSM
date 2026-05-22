@@ -1,4 +1,5 @@
 import { useEffect, useState, type FormEvent } from "react";
+import { useSearchParams } from "react-router-dom";
 import {
   Battery,
   Cpu,
@@ -15,6 +16,7 @@ import {
   Bell,
   Archive,
   Database,
+  HeartPulse,
   Timer,
   UserCircle,
   Wrench,
@@ -39,13 +41,20 @@ import {
 import { AccountSettings } from "../components/AccountSettings";
 import { BackupSettings } from "../components/BackupSettings";
 import { DatabaseSettings } from "../components/DatabaseSettings";
+import { HealthRulesSettings } from "../components/HealthRulesSettings";
 import { SolarThrobber } from "../components/SolarThrobber";
 import { Toggle } from "../components/Toggle";
 import { settingsApi } from "../lib/api";
 import { useAuth } from "../lib/auth";
 import { formatErrorMessage, useToast } from "../lib/toast";
 
-type SettingsTab = "system" | "notifications" | "accounts" | "backup" | "database";
+type SettingsTab =
+  | "system"
+  | "notifications"
+  | "health"
+  | "accounts"
+  | "backup"
+  | "database";
 
 /** Placeholder only — not a real device serial. */
 const EXAMPLE_PVS_SERIAL = "ZT223485000000W0000";
@@ -66,15 +75,34 @@ function isSmtpConfigured(form: {
 const TABS: { id: SettingsTab; label: string; icon: typeof Wrench }[] = [
   { id: "system", label: "System", icon: Wrench },
   { id: "notifications", label: "Notifications", icon: Bell },
+  { id: "health", label: "Health alerts", icon: HeartPulse },
   { id: "accounts", label: "Accounts", icon: UserCircle },
   { id: "backup", label: "Backup", icon: Archive },
   { id: "database", label: "Database", icon: Database },
 ];
 
+const TAB_IDS = new Set<string>(TABS.map((t) => t.id));
+
+function tabFromSearch(params: URLSearchParams): SettingsTab {
+  const t = params.get("tab");
+  return TAB_IDS.has(t ?? "") ? (t as SettingsTab) : "system";
+}
+
 export function SettingsPage() {
   const { refreshStatus } = useAuth();
   const { showToast } = useToast();
-  const [tab, setTab] = useState<SettingsTab>("system");
+  const [searchParams, setSearchParams] = useSearchParams();
+  const [tab, setTab] = useState<SettingsTab>(() => tabFromSearch(searchParams));
+
+  useEffect(() => {
+    const fromUrl = tabFromSearch(searchParams);
+    setTab((current) => (current === fromUrl ? current : fromUrl));
+  }, [searchParams]);
+
+  const selectTab = (id: SettingsTab) => {
+    setTab(id);
+    setSearchParams(id === "system" ? {} : { tab: id }, { replace: true });
+  };
   const [form, setForm] = useState({
     pvs_host: "",
     pvs_serial: "",
@@ -262,7 +290,7 @@ export function SettingsPage() {
       <header>
         <h1 className="text-2xl font-bold text-gradient">Settings</h1>
         <p className="text-sm text-mist mt-1">
-          System, notifications, accounts, backup, and database.
+          System, notifications, health alerts, accounts, backup, and database.
         </p>
       </header>
 
@@ -274,7 +302,7 @@ export function SettingsPage() {
           <button
             key={id}
             type="button"
-            onClick={() => setTab(id)}
+            onClick={() => selectTab(id)}
             className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition ${
               tab === id
                 ? "bg-gradient-to-r from-cyan/20 to-purple-500/20 text-cyan-glow border border-cyan/30 shadow-[0_0_16px_rgb(34_211_238/0.15)]"
@@ -881,6 +909,8 @@ export function SettingsPage() {
           </button>
         </form>
       )}
+
+      {tab === "health" && <HealthRulesSettings />}
 
       {tab === "accounts" && <AccountSettings />}
 

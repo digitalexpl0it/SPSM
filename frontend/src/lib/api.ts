@@ -191,9 +191,37 @@ export interface HealthResponse {
   summary: "healthy" | "critical" | "warning" | "info";
 }
 
+export interface HealthRuleTunable {
+  key: string;
+  label: string;
+  type: "int" | "float";
+  min: number;
+  max: number;
+  step?: number;
+  default: number;
+  value: number;
+  help?: string;
+}
+
+export interface HealthRuleCatalogEntry {
+  id: string;
+  setting_key: string;
+  severity: "info" | "warning" | "critical";
+  title: string;
+  description: string;
+  enabled: boolean;
+  tunables: HealthRuleTunable[];
+}
+
 export const healthApi = {
   site: () => api<HealthResponse>("/api/health/site"),
   history: (days = 30) => api<HealthHistoryEvent[]>(`/api/health/history?days=${days}`),
+  rules: () => api<{ rules: HealthRuleCatalogEntry[] }>("/api/health/rules"),
+  saveRules: (body: { settings: Record<string, string | boolean | number> }) =>
+    api<{ ok: boolean; rules: HealthRuleCatalogEntry[] }>("/api/health/rules", {
+      method: "PUT",
+      body: JSON.stringify(body),
+    }),
 };
 
 export const dataApi = {

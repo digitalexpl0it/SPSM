@@ -9,6 +9,7 @@ import { SettingsPage } from "./pages/SettingsPage";
 import { HealthPage } from "./pages/HealthPage";
 import { ReportsPage } from "./pages/ReportsPage";
 import { SystemPage } from "./pages/SystemPage";
+import { HelpPage } from "./pages/HelpPage";
 import { SetupWizard } from "./components/SetupWizard";
 
 function RequireAuth({ children }: { children: React.ReactNode }) {
@@ -99,6 +100,7 @@ export default function App() {
             <SettingsOrSetup />
           }
         />
+        <Route path="/help" element={<HelpPage />} />
       </Route>
       <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>
