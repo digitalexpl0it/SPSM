@@ -26,7 +26,7 @@ Rule-based alerts, collapsible check list, and recent alert history.
 
 ### Energy reports
 
-Daily PV / load / grid totals, bar chart, CSV export, and lowest-output panels.
+Daily PV / load / import / export, summary cards, bar chart, year-over-year comparison (when data exists), CSV export, and lowest-output panels.
 
 ![SPSM energy reports](Screenshots/Reports.png)
 
@@ -36,10 +36,11 @@ Daily PV / load / grid totals, bar chart, CSV export, and lowest-output panels.
 - **Energy flow diagram** — animated solar → home → grid (day/night visuals, optional battery path)
 - **Micro-inverters** — per-panel power, temperature, voltage, lifetime energy
 - **System** — PVS supervisor info, optional raw meter dump
-- **Reports** — daily PV / load / import / export, CO₂ estimate, CSV export, weakest-panel snapshot
-- **Settings** — PVS connection, site timezone, collector, temperature alerts, notifications (webhook / ntfy)
+- **Reports** — daily PV / load / grid import & export, CO₂ estimate, 7/30/90-day ranges, year-over-year comparison, CSV export, weakest-panel snapshot
+- **Settings** — tabbed UI (**System**, **Notifications**, **Accounts**); toggle switches; toast feedback on save and connection/notify tests
+- **Notifications** — master enable plus per-channel toggles for **webhook** (Discord/Slack), **ntfy**, and **SMTP email** (STARTTLS on port 587, e.g. [Mailtrap](https://mailtrap.io) live SMTP)
 - **Accounts** — admin user management (create / edit / delete portal users)
-- **System health** — rule-based alerts with history; optional push on new critical/warning events
+- **System health** — rule-based alerts with history; optional push on new critical/warning events (debounced)
 - **Background collector** — polls the PVS on a schedule and stores time-series data in PostgreSQL
 - **Pre-aggregated rollups** — faster week/month/year charts
 - **Prometheus** — `GET /metrics` on the API for external monitoring
@@ -109,8 +110,9 @@ Open **http://localhost:5173**
 
 1. Sign in (default on a **fresh** database: **`admin` / `admin`** — change this immediately under **Settings → Accounts**).
 2. Go to **Settings → System** and enter your PVS **IP or hostname** and **serial number**.
-3. Click **Test connection**, then **Save settings**.
-4. Open the **Dashboard** — live data appears once the collector and PVS connection are working.
+3. Click **Test connection** (result appears as a toast), then **Save settings**.
+4. Optional: **Settings → Notifications** — enable channels, configure webhook / ntfy / SMTP, **Save**, then **Send test notification**.
+5. Open the **Dashboard** — live data appears once the collector and PVS connection are working.
 
 PostgreSQL runs **inside Docker only** (no host port `5432` by default), so it won’t conflict with a local Postgres install. To query from the host, add `"5433:5432"` under `db.ports` in `docker-compose.yml`.
 
@@ -148,9 +150,27 @@ curl -sk -b /tmp/pvs.txt "https://$PVS_IP/vars?match=livedata&fmt=obj" | head
 | `collector_enabled` | Turn background polling on or off |
 | `site_timezone` | IANA timezone for “today”, reports, and daylight health checks |
 | `websocket_live` | SSE live dashboard (polls PVS every 5s) |
-| `notify_*` | Webhook URL and/or ntfy topic for health alerts |
+| `notify_enabled` | Master switch for health alert notifications |
+| `notify_webhook_enabled` + `notify_webhook_url` | Discord/Slack (or any) incoming webhook |
+| `notify_ntfy_enabled` + `notify_ntfy_topic` | [ntfy.sh](https://ntfy.sh) topic or full URL |
+| `notify_smtp_enabled` + SMTP fields | Email via SMTP with STARTTLS (typical port **587**) |
+| `notify_min_severity` | `critical` or `warning` — minimum level that triggers a send |
 
 Settings are stored in the database and editable from the UI.
+
+#### SMTP example (Mailtrap live)
+
+| Field | Example |
+|-------|---------|
+| Host | `live.smtp.mailtrap.io` |
+| Port | `587` |
+| TLS | On (STARTTLS) |
+| Username | `api` |
+| Password | Your Mailtrap API token |
+| From | Verified sender in Mailtrap |
+| To | Alert recipient (comma-separated allowed) |
+
+Enable **SMTP email** on the Notifications tab, save, then use **Send test notification**. The server uses **saved** settings for tests and live alerts—not unsaved form values.
 
 ### Backfill chart rollups
 
@@ -203,12 +223,14 @@ SPSM/
 │   ├── app/
 │   │   ├── collector.py      # PVS polling loop
 │   │   ├── pvs_client.py     # varserver HTTP client
-│   │   └── routers/          # auth, data, settings, users
+│   │   ├── notifier.py       # webhook, ntfy, SMTP
+│   │   ├── rollup.py         # chart rollups
+│   │   └── routers/          # auth, data, reports, settings, health, metrics
 │   └── sql/init.sql
 ├── frontend/
 │   └── src/
-│       ├── pages/            # Dashboard, Inverters, System, Settings
-│       └── components/       # Charts, energy flow, gauges
+│       ├── pages/            # Dashboard, Inverters, Reports, Health, System, Settings
+│       └── components/       # Charts, energy flow, toggles, toasts
 ├── docker-compose.yml
 ├── .env.example
 └── README.md
@@ -243,6 +265,8 @@ VITE_API_URL=http://localhost:8000 npm run dev
 | Dashboard empty / PVS offline | Settings → Test connection; verify IP, serial, and LAN access |
 | Docker build fails (registry IPv6) | Set `"ipv6": false` in `~/.docker/daemon.json` and restart Docker |
 | No history on charts | Wait for the collector to run; check **collector enabled** and poll interval |
+| Test notification fails | Enable notifications, turn on a channel, fill its fields, **Save**, then test; check API logs for SMTP errors |
+| Reports export always 0 | Requires signed grid net meter deltas; upgrade API if an older build clamped export to zero |
 | Port 5432 in use | Postgres is not exposed by default; do not map `5432` unless intentional |
 
 ## Roadmap ideas
@@ -250,6 +274,7 @@ VITE_API_URL=http://localhost:8000 npm run dev
 - Per-inverter historical charts from stored snapshots
 - Temperature derating estimate on the Inverters page
 - Multi-site / multiple PVS hosts in one portal
+- Test notification using current form values without saving first
 
 ## License
 

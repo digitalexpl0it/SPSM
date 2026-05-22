@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
 import { Pencil, Trash2, UserPlus, X } from "lucide-react";
+import { Toggle } from "./Toggle";
 import { usersApi, type PortalUser } from "../lib/api";
 import { useAuth } from "../lib/auth";
 
@@ -256,14 +257,11 @@ export function AccountSettings() {
                   placeholder={modal === "edit" ? "••••••••" : undefined}
                 />
               </div>
-              <label className="flex items-center gap-2 text-sm text-mist">
-                <input
-                  type="checkbox"
-                  checked={form.is_admin}
-                  onChange={(e) => setForm({ ...form, is_admin: e.target.checked })}
-                />
-                Grant admin access (can change system settings)
-              </label>
+              <Toggle
+                checked={form.is_admin}
+                onChange={(is_admin) => setForm({ ...form, is_admin })}
+                label="Grant admin access (can change system settings)"
+              />
 
               {formMsg && (
                 <p

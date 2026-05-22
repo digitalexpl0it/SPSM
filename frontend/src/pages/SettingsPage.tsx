@@ -1,7 +1,6 @@
 import { useEffect, useState, type FormEvent } from "react";
 import {
   Battery,
-  CheckCircle2,
   Cpu,
   Globe,
   Hash,
@@ -36,21 +35,25 @@ import {
 } from "../lib/temperatureSettings";
 import { AccountSettings } from "../components/AccountSettings";
 import { SolarThrobber } from "../components/SolarThrobber";
+import { Toggle } from "../components/Toggle";
 import { settingsApi } from "../lib/api";
 import { useAuth } from "../lib/auth";
+import { formatErrorMessage, useToast } from "../lib/toast";
 
-type SettingsTab = "system" | "accounts";
+type SettingsTab = "system" | "notifications" | "accounts";
 
 /** Placeholder only — not a real device serial. */
 const EXAMPLE_PVS_SERIAL = "ZT223485000000W0000";
 
 const TABS: { id: SettingsTab; label: string; icon: typeof Wrench }[] = [
   { id: "system", label: "System", icon: Wrench },
+  { id: "notifications", label: "Notifications", icon: Bell },
   { id: "accounts", label: "Accounts", icon: UserCircle },
 ];
 
 export function SettingsPage() {
   const { refreshStatus } = useAuth();
+  const { showToast } = useToast();
   const [tab, setTab] = useState<SettingsTab>("system");
   const [form, setForm] = useState({
     pvs_host: "",
@@ -71,17 +74,25 @@ export function SettingsPage() {
     websocket_live: false,
     site_timezone: "America/Los_Angeles",
     notify_enabled: false,
+    notify_webhook_enabled: false,
+    notify_ntfy_enabled: false,
+    notify_smtp_enabled: false,
     notify_webhook_url: "",
     notify_ntfy_topic: "",
     notify_min_severity: "critical" as "warning" | "critical",
+    notify_smtp_host: "",
+    notify_smtp_port: 587,
+    notify_smtp_use_tls: true,
+    notify_smtp_username: "",
+    notify_smtp_password: "",
+    notify_smtp_from: "",
+    notify_smtp_to: "",
     setup_complete: false,
   });
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [testing, setTesting] = useState(false);
   const [testingNotify, setTestingNotify] = useState(false);
-  const [testResult, setTestResult] = useState<{ ok: boolean; message: string } | null>(null);
-  const [message, setMessage] = useState("");
 
   useEffect(() => {
     settingsApi
@@ -117,10 +128,23 @@ export function SettingsPage() {
           websocket_live: s.websocket_live === "true",
           site_timezone: s.site_timezone || "America/Los_Angeles",
           notify_enabled: s.notify_enabled === "true",
+          notify_webhook_enabled: s.notify_webhook_enabled === "true",
+          notify_ntfy_enabled: s.notify_ntfy_enabled === "true",
+          notify_smtp_enabled: s.notify_smtp_enabled === "true",
           notify_webhook_url: s.notify_webhook_url || "",
           notify_ntfy_topic: s.notify_ntfy_topic || "",
           notify_min_severity:
             s.notify_min_severity === "warning" ? "warning" : "critical",
+          notify_smtp_host: s.notify_smtp_host || "",
+          notify_smtp_port: (() => {
+            const n = parseInt(s.notify_smtp_port || "587", 10);
+            return !Number.isNaN(n) && n > 0 ? n : 587;
+          })(),
+          notify_smtp_use_tls: s.notify_smtp_use_tls !== "false",
+          notify_smtp_username: s.notify_smtp_username || "",
+          notify_smtp_password: s.notify_smtp_password || "",
+          notify_smtp_from: s.notify_smtp_from || "",
+          notify_smtp_to: s.notify_smtp_to || "",
           setup_complete: s.setup_complete === "true",
         });
       })
@@ -129,32 +153,39 @@ export function SettingsPage() {
 
   const testConnection = async () => {
     setTesting(true);
-    setTestResult(null);
     try {
       const res = await settingsApi.testPvs(
         form.pvs_host,
         form.pvs_serial,
         form.pvs_verify_ssl
       );
-      setTestResult({ ok: true, message: res.message });
+      showToast("success", res.message);
     } catch (e) {
-      setTestResult({
-        ok: false,
-        message: e instanceof Error ? e.message : "Connection failed",
-      });
+      showToast("error", formatErrorMessage(e));
     } finally {
       setTesting(false);
+    }
+  };
+
+  const testNotification = async () => {
+    setTestingNotify(true);
+    try {
+      const res = await settingsApi.testNotify();
+      showToast("success", res.message);
+    } catch (e) {
+      showToast("error", formatErrorMessage(e));
+    } finally {
+      setTestingNotify(false);
     }
   };
 
   const save = async (e: FormEvent) => {
     e.preventDefault();
     if (!form.pvs_host || !form.pvs_serial) {
-      setMessage("PVS host and serial are required.");
+      showToast("error", "PVS host and serial are required.");
       return;
     }
     setSaving(true);
-    setMessage("");
     try {
       const {
         inverter_gauge_auto,
@@ -173,9 +204,9 @@ export function SettingsPage() {
       });
       clearSiteSettingsCache();
       await refreshStatus();
-      setMessage("Settings saved. Collector will use these on the next poll.");
+      showToast("success", "Settings saved. Collector will use these on the next poll.");
     } catch (e) {
-      setMessage(e instanceof Error ? e.message : "Save failed");
+      showToast("error", formatErrorMessage(e));
     } finally {
       setSaving(false);
     }
@@ -188,12 +219,12 @@ export function SettingsPage() {
       <header>
         <h1 className="text-2xl font-bold text-gradient">Settings</h1>
         <p className="text-sm text-mist mt-1">
-          Configure your PVS6 connection and portal accounts.
+          System, notifications, and portal accounts.
         </p>
       </header>
 
       <nav
-        className="flex gap-1 p-1 rounded-xl bg-panel/60 border border-surface/80 w-fit"
+        className="flex flex-wrap gap-1 p-1 rounded-xl bg-panel/60 border border-surface/80 w-fit max-w-full"
         aria-label="Settings sections"
       >
         {TABS.map(({ id, label, icon: Icon }) => (
@@ -266,16 +297,16 @@ export function SettingsPage() {
                 </p>
               </div>
 
-              <label className="flex items-center gap-2 text-sm text-mist cursor-pointer">
-                <input
-                  type="checkbox"
-                  checked={form.pvs_verify_ssl}
-                  onChange={(e) => setForm({ ...form, pvs_verify_ssl: e.target.checked })}
-                  className="rounded border-surface"
-                />
-                <Shield className="w-4 h-4" />
-                Verify SSL certificate (usually off for local PVS)
-              </label>
+              <Toggle
+                checked={form.pvs_verify_ssl}
+                onChange={(pvs_verify_ssl) => setForm({ ...form, pvs_verify_ssl })}
+                label={
+                  <span className="flex items-center gap-2">
+                    <Shield className="w-4 h-4 shrink-0" />
+                    Verify SSL certificate (usually off for local PVS)
+                  </span>
+                }
+              />
 
               <button
                 type="button"
@@ -290,17 +321,6 @@ export function SettingsPage() {
                 )}
                 Test connection
               </button>
-
-              {testResult && (
-                <p
-                  className={`text-sm flex items-center gap-2 ${
-                    testResult.ok ? "text-emerald-400" : "text-red-400"
-                  }`}
-                >
-                  <CheckCircle2 className="w-4 h-4" />
-                  {testResult.message}
-                </p>
-              )}
             </section>
 
               <section className="card-glow p-6 space-y-4">
@@ -373,92 +393,20 @@ export function SettingsPage() {
                     <span className="text-cyan/80">60 = once per minute.</span>
                   </p>
                 </div>
-                <label className="flex items-center gap-2 text-sm text-mist">
-                  <input
-                    type="checkbox"
-                    checked={form.collector_enabled}
-                    onChange={(e) => setForm({ ...form, collector_enabled: e.target.checked })}
-                  />
-                  Enable background collector
-                </label>
-                <label className="flex items-center gap-2 text-sm text-mist">
-                  <input
-                    type="checkbox"
-                    checked={form.websocket_live}
-                    onChange={(e) => setForm({ ...form, websocket_live: e.target.checked })}
-                  />
-                  Live dashboard updates (SSE, polls PVS every 5s)
-                </label>
+                <Toggle
+                  checked={form.collector_enabled}
+                  onChange={(collector_enabled) => setForm({ ...form, collector_enabled })}
+                  label="Enable background collector"
+                />
+                <Toggle
+                  checked={form.websocket_live}
+                  onChange={(websocket_live) => setForm({ ...form, websocket_live })}
+                  label="Live dashboard updates (SSE, polls PVS every 5s)"
+                />
               </section>
             </div>
 
             <div className="space-y-6">
-              <section className="card-glow p-6 space-y-4">
-                <h2 className="text-lg font-semibold flex items-center gap-2 text-cyan-glow">
-                  <Bell className="w-5 h-5" />
-                  Notifications
-                </h2>
-                <p className="text-sm text-mist">
-                  Webhook (Discord/Slack) or ntfy.sh when new health alerts fire.
-                </p>
-                <label className="flex items-center gap-2 text-sm">
-                  <input
-                    type="checkbox"
-                    checked={form.notify_enabled}
-                    onChange={(e) => setForm({ ...form, notify_enabled: e.target.checked })}
-                  />
-                  Enable notifications
-                </label>
-                <input
-                  className="input-dark"
-                  placeholder="Webhook URL (optional)"
-                  value={form.notify_webhook_url}
-                  onChange={(e) =>
-                    setForm({ ...form, notify_webhook_url: e.target.value })
-                  }
-                />
-                <input
-                  className="input-dark"
-                  placeholder="ntfy topic or URL (optional)"
-                  value={form.notify_ntfy_topic}
-                  onChange={(e) => setForm({ ...form, notify_ntfy_topic: e.target.value })}
-                />
-                <div>
-                  <label className="text-xs text-mist block mb-1">Minimum severity</label>
-                  <select
-                    className="input-dark"
-                    value={form.notify_min_severity}
-                    onChange={(e) =>
-                      setForm({
-                        ...form,
-                        notify_min_severity: e.target.value as "warning" | "critical",
-                      })
-                    }
-                  >
-                    <option value="critical">Critical only</option>
-                    <option value="warning">Warning and critical</option>
-                  </select>
-                </div>
-                <button
-                  type="button"
-                  disabled={testingNotify}
-                  onClick={async () => {
-                    setTestingNotify(true);
-                    try {
-                      const res = await settingsApi.testNotify();
-                      setMessage(res.message);
-                    } catch (e) {
-                      setMessage(e instanceof Error ? e.message : "Test failed");
-                    } finally {
-                      setTestingNotify(false);
-                    }
-                  }}
-                  className="text-sm text-cyan-glow border border-cyan/30 px-3 py-2 rounded-lg hover:bg-cyan/10"
-                >
-                  {testingNotify ? "Sending…" : "Send test notification"}
-                </button>
-              </section>
-
               <section className="card-glow p-6 space-y-4">
                 <h2 className="text-lg font-semibold flex items-center gap-2 text-cyan-glow">
                   <Cpu className="w-5 h-5" />
@@ -468,16 +416,11 @@ export function SettingsPage() {
                   Full-scale on the power gauge on the Inverters page (0 → max watts). Use
                   automatic detection from each module type, or set one value for all panels.
                 </p>
-                <label className="flex items-center gap-2 text-sm text-mist">
-                  <input
-                    type="checkbox"
-                    checked={form.inverter_gauge_auto}
-                    onChange={(e) =>
-                      setForm({ ...form, inverter_gauge_auto: e.target.checked })
-                    }
-                  />
-                  Automatic (from module type, usually 320W)
-                </label>
+                <Toggle
+                  checked={form.inverter_gauge_auto}
+                  onChange={(inverter_gauge_auto) => setForm({ ...form, inverter_gauge_auto })}
+                  label="Automatic (from module type, usually 320W)"
+                />
                 {!form.inverter_gauge_auto && (
                   <div>
                     <label className="text-xs text-mist block mb-1">Gauge maximum (watts)</label>
@@ -552,27 +495,23 @@ export function SettingsPage() {
                     ))}
                   </div>
                 </div>
-                <label className="flex items-center gap-2 text-sm text-mist">
-                  <input
-                    type="checkbox"
-                    checked={form.temp_threshold_auto}
-                    onChange={(e) => {
-                      const auto = e.target.checked;
-                      const defs = DEFAULT_TEMP_THRESHOLDS[form.temp_unit];
-                      setForm({
-                        ...form,
-                        temp_threshold_auto: auto,
-                        ...(auto
-                          ? {
-                              temp_warning: defs.warning,
-                              temp_critical: defs.critical,
-                            }
-                          : {}),
-                      });
-                    }}
-                  />
-                  Default alert thresholds ({defaultThresholdsLabel(form.temp_unit)})
-                </label>
+                <Toggle
+                  checked={form.temp_threshold_auto}
+                  onChange={(auto) => {
+                    const defs = DEFAULT_TEMP_THRESHOLDS[form.temp_unit];
+                    setForm({
+                      ...form,
+                      temp_threshold_auto: auto,
+                      ...(auto
+                        ? {
+                            temp_warning: defs.warning,
+                            temp_critical: defs.critical,
+                          }
+                        : {}),
+                    });
+                  }}
+                  label={`Default alert thresholds (${defaultThresholdsLabel(form.temp_unit)})`}
+                />
                 {!form.temp_threshold_auto && (
                   <div className="grid grid-cols-2 gap-3">
                     <div>
@@ -630,23 +569,195 @@ export function SettingsPage() {
                   Turn on if your site has a SunVault or other ESS. Solar-only systems should leave
                   this off to skip battery API calls and hide battery UI on the dashboard.
                 </p>
-                <label className="flex items-center gap-2 text-sm">
-                  <input
-                    type="checkbox"
-                    checked={form.battery_enabled}
-                    onChange={(e) => setForm({ ...form, battery_enabled: e.target.checked })}
-                  />
-                  Enable battery monitoring
-                </label>
+                <Toggle
+                  checked={form.battery_enabled}
+                  onChange={(battery_enabled) => setForm({ ...form, battery_enabled })}
+                  label="Enable battery monitoring"
+                />
               </section>
             </div>
           </div>
 
-          {message && <p className="text-sm text-cyan-glow">{message}</p>}
-
           <button type="submit" className="btn-primary" disabled={saving}>
             {saving ? "Saving…" : "Save settings"}
           </button>
+        </form>
+      )}
+
+      {tab === "notifications" && (
+        <form onSubmit={save} className="space-y-6 max-w-xl">
+          <section className="card-glow p-6 space-y-4">
+            <h2 className="text-lg font-semibold flex items-center gap-2 text-cyan-glow">
+              <Bell className="w-5 h-5" />
+              Alert notifications
+            </h2>
+            <p className="text-sm text-mist">
+              Webhook (Discord/Slack), ntfy.sh, or SMTP email when new health alerts fire.
+              Turn on each channel you want to use.
+            </p>
+            <Toggle
+              checked={form.notify_enabled}
+              onChange={(notify_enabled) => setForm({ ...form, notify_enabled })}
+              label="Enable notifications"
+              description="Master switch for all alert channels below"
+            />
+
+            <div className="border-t border-surface/80 pt-4 space-y-4">
+              <Toggle
+                checked={form.notify_webhook_enabled}
+                onChange={(notify_webhook_enabled) =>
+                  setForm({ ...form, notify_webhook_enabled })
+                }
+                label="Webhook"
+                description="Discord, Slack, or any incoming webhook URL"
+                disabled={!form.notify_enabled}
+              />
+              <input
+                className="input-dark"
+                placeholder="Webhook URL"
+                value={form.notify_webhook_url}
+                onChange={(e) => setForm({ ...form, notify_webhook_url: e.target.value })}
+                disabled={!form.notify_enabled || !form.notify_webhook_enabled}
+              />
+            </div>
+
+            <div className="border-t border-surface/80 pt-4 space-y-4">
+              <Toggle
+                checked={form.notify_ntfy_enabled}
+                onChange={(notify_ntfy_enabled) => setForm({ ...form, notify_ntfy_enabled })}
+                label="ntfy"
+                description="Push alerts via ntfy.sh topic or full URL"
+                disabled={!form.notify_enabled}
+              />
+              <input
+                className="input-dark"
+                placeholder="ntfy topic or URL"
+                value={form.notify_ntfy_topic}
+                onChange={(e) => setForm({ ...form, notify_ntfy_topic: e.target.value })}
+                disabled={!form.notify_enabled || !form.notify_ntfy_enabled}
+              />
+            </div>
+
+            <div className="border-t border-surface/80 pt-4 space-y-4">
+              <Toggle
+                checked={form.notify_smtp_enabled}
+                onChange={(notify_smtp_enabled) => setForm({ ...form, notify_smtp_enabled })}
+                label="SMTP email"
+                description="TLS email (e.g. Mailtrap live SMTP)"
+                disabled={!form.notify_enabled}
+              />
+              <div
+                className={`space-y-3 ${
+                  !form.notify_enabled || !form.notify_smtp_enabled
+                    ? "opacity-50 pointer-events-none"
+                    : ""
+                }`}
+              >
+                <p className="text-xs text-mist">
+                  Example Mailtrap: host{" "}
+                  <span className="mono text-cyan-glow/80">live.smtp.mailtrap.io</span>, port{" "}
+                  <span className="mono">587</span>, username <span className="mono">api</span>,
+                  password = API token.
+                </p>
+                <input
+                  className="input-dark"
+                  placeholder="SMTP host (e.g. live.smtp.mailtrap.io)"
+                  value={form.notify_smtp_host}
+                  onChange={(e) => setForm({ ...form, notify_smtp_host: e.target.value })}
+                />
+                <div className="grid gap-3 sm:grid-cols-2">
+                  <div>
+                    <label className="text-xs text-mist block mb-1">Port</label>
+                    <input
+                      type="number"
+                      className="input-dark w-full"
+                      min={1}
+                      max={65535}
+                      value={form.notify_smtp_port}
+                      onChange={(e) =>
+                        setForm({
+                          ...form,
+                          notify_smtp_port: parseInt(e.target.value, 10) || 587,
+                        })
+                      }
+                    />
+                  </div>
+                  <Toggle
+                    checked={form.notify_smtp_use_tls}
+                    onChange={(notify_smtp_use_tls) =>
+                      setForm({ ...form, notify_smtp_use_tls })
+                    }
+                    label="Use TLS (STARTTLS)"
+                    className="items-end pb-1"
+                  />
+                </div>
+                <input
+                  className="input-dark"
+                  placeholder="SMTP username (e.g. api)"
+                  value={form.notify_smtp_username}
+                  onChange={(e) => setForm({ ...form, notify_smtp_username: e.target.value })}
+                  autoComplete="off"
+                />
+                <input
+                  type="password"
+                  className="input-dark"
+                  placeholder="SMTP password / API token"
+                  value={form.notify_smtp_password}
+                  onChange={(e) => setForm({ ...form, notify_smtp_password: e.target.value })}
+                  autoComplete="new-password"
+                />
+                <input
+                  className="input-dark"
+                  type="email"
+                  placeholder="From address"
+                  value={form.notify_smtp_from}
+                  onChange={(e) => setForm({ ...form, notify_smtp_from: e.target.value })}
+                />
+                <input
+                  className="input-dark"
+                  type="email"
+                  placeholder="To address (comma-separated)"
+                  value={form.notify_smtp_to}
+                  onChange={(e) => setForm({ ...form, notify_smtp_to: e.target.value })}
+                />
+              </div>
+            </div>
+
+            <div>
+              <label className="text-xs text-mist block mb-1">Minimum severity</label>
+              <select
+                className="input-dark"
+                value={form.notify_min_severity}
+                onChange={(e) =>
+                  setForm({
+                    ...form,
+                    notify_min_severity: e.target.value as "warning" | "critical",
+                  })
+                }
+              >
+                <option value="critical">Critical only</option>
+                <option value="warning">Warning and critical</option>
+              </select>
+            </div>
+          </section>
+
+          <p className="text-xs text-mist">
+            Save settings before sending a test — the server uses your saved configuration.
+          </p>
+
+          <div className="flex flex-wrap gap-3">
+            <button
+              type="button"
+              disabled={testingNotify}
+              onClick={testNotification}
+              className="text-sm text-cyan-glow border border-cyan/30 px-4 py-2 rounded-lg hover:bg-cyan/10"
+            >
+              {testingNotify ? "Sending…" : "Send test notification"}
+            </button>
+            <button type="submit" className="btn-primary" disabled={saving}>
+              {saving ? "Saving…" : "Save settings"}
+            </button>
+          </div>
         </form>
       )}
 

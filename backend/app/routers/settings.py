@@ -32,9 +32,19 @@ class SettingsUpdate(BaseModel):
     temp_critical: int | None = Field(None, ge=0, le=250)
     site_timezone: str | None = Field(None, max_length=64)
     notify_enabled: bool | None = None
+    notify_webhook_enabled: bool | None = None
+    notify_ntfy_enabled: bool | None = None
+    notify_smtp_enabled: bool | None = None
     notify_webhook_url: str | None = None
     notify_ntfy_topic: str | None = None
     notify_min_severity: str | None = Field(None, pattern="^(warning|critical)$")
+    notify_smtp_host: str | None = None
+    notify_smtp_port: int | None = Field(None, ge=1, le=65535)
+    notify_smtp_use_tls: bool | None = None
+    notify_smtp_username: str | None = None
+    notify_smtp_password: str | None = None
+    notify_smtp_from: str | None = None
+    notify_smtp_to: str | None = None
     co2_kg_per_kwh: float | None = Field(None, ge=0, le=2)
     temp_coefficient_pct_per_c: float | None = Field(None, ge=-1, le=0)
     setup_complete: bool | None = None
@@ -69,6 +79,10 @@ async def update_settings(
         "websocket_live",
         "battery_enabled",
         "notify_enabled",
+        "notify_webhook_enabled",
+        "notify_ntfy_enabled",
+        "notify_smtp_enabled",
+        "notify_smtp_use_tls",
         "setup_complete",
     }
     for key, value in mapping.items():
@@ -88,6 +102,8 @@ async def update_settings(
             await set_setting(db, key, tz)
         elif key in ("co2_kg_per_kwh", "temp_coefficient_pct_per_c"):
             await set_setting(db, key, str(value))
+        elif key == "notify_smtp_port":
+            await set_setting(db, key, str(int(value)) if value is not None else "587")
         else:
             await set_setting(db, key, str(value))
 
@@ -125,13 +141,16 @@ async def test_notify(
     ok = await send_notification(
         settings,
         title="Test alert",
-        message="SPSM notification test — your webhook or ntfy is configured.",
+        message="SPSM notification test — check your configured channel(s).",
         severity="warning",
         alert_id="test",
     )
     if not ok:
         raise HTTPException(
             status_code=400,
-            detail="Notification not sent. Enable notifications and set webhook URL or ntfy topic.",
+            detail=(
+                "Notification not sent. Enable notifications and configure at least one of: "
+                "webhook, ntfy, or SMTP enabled with valid saved settings."
+            ),
         )
     return {"ok": True, "message": "Test notification sent"}

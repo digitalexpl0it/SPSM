@@ -1,9 +1,13 @@
-"""Outbound notifications (webhook + ntfy)."""
+"""Outbound notifications (webhook, ntfy, SMTP email)."""
 
 from __future__ import annotations
 
+import asyncio
 import logging
+import smtplib
+import ssl
 from datetime import UTC, datetime, timedelta
+from email.message import EmailMessage
 from typing import Any
 
 import httpx
@@ -27,6 +31,91 @@ def should_notify(
     if last_notified_at.tzinfo is None:
         last_notified_at = last_notified_at.replace(tzinfo=UTC)
     return datetime.now(UTC) - last_notified_at >= timedelta(hours=debounce_hours)
+
+
+def _channel_enabled(settings: dict[str, str], key: str) -> bool:
+    return settings.get(key, "false").lower() == "true"
+
+
+def smtp_configured(settings: dict[str, str]) -> bool:
+    host = (settings.get("notify_smtp_host") or "").strip()
+    to_addrs = _smtp_recipients(settings)
+    from_addr = (settings.get("notify_smtp_from") or "").strip() or (
+        settings.get("notify_smtp_username") or ""
+    ).strip()
+    return bool(host and to_addrs and from_addr)
+
+
+def _smtp_recipients(settings: dict[str, str]) -> list[str]:
+    raw = (settings.get("notify_smtp_to") or "").strip()
+    if not raw:
+        return []
+    return [a.strip() for a in raw.replace(";", ",").split(",") if a.strip()]
+
+
+def _send_smtp_sync(
+    *,
+    host: str,
+    port: int,
+    use_tls: bool,
+    username: str,
+    password: str,
+    from_addr: str,
+    to_addrs: list[str],
+    subject: str,
+    body: str,
+) -> None:
+    msg = EmailMessage()
+    msg["Subject"] = subject
+    msg["From"] = from_addr
+    msg["To"] = ", ".join(to_addrs)
+    msg.set_content(body)
+
+    with smtplib.SMTP(host, port, timeout=30) as smtp:
+        if use_tls:
+            smtp.starttls(context=ssl.create_default_context())
+        if username:
+            smtp.login(username, password)
+        smtp.send_message(msg, from_addr=from_addr, to_addrs=to_addrs)
+
+
+async def _send_smtp_email(
+    settings: dict[str, str],
+    *,
+    subject: str,
+    body: str,
+) -> bool:
+    if not smtp_configured(settings):
+        return False
+
+    host = (settings.get("notify_smtp_host") or "").strip()
+    try:
+        port = int((settings.get("notify_smtp_port") or "587").strip())
+    except ValueError:
+        port = 587
+    use_tls = (settings.get("notify_smtp_use_tls") or "true").lower() == "true"
+    username = (settings.get("notify_smtp_username") or "").strip()
+    password = settings.get("notify_smtp_password") or ""
+    from_addr = (settings.get("notify_smtp_from") or "").strip() or username
+    to_addrs = _smtp_recipients(settings)
+
+    try:
+        await asyncio.to_thread(
+            _send_smtp_sync,
+            host=host,
+            port=port,
+            use_tls=use_tls,
+            username=username,
+            password=password,
+            from_addr=from_addr,
+            to_addrs=to_addrs,
+            subject=subject,
+            body=body,
+        )
+        return True
+    except (OSError, smtplib.SMTPException) as e:
+        logger.warning("SMTP notify failed: %s", e)
+        return False
 
 
 async def send_notification(
@@ -54,9 +143,15 @@ async def send_notification(
     sent = False
     webhook = (settings.get("notify_webhook_url") or "").strip()
     ntfy = (settings.get("notify_ntfy_topic") or "").strip()
+    subject = str(payload["title"])
+    body = f"{message}\n\nSeverity: {severity}"
+
+    if _channel_enabled(settings, "notify_smtp_enabled") and smtp_configured(settings):
+        if await _send_smtp_email(settings, subject=subject, body=body):
+            sent = True
 
     async with httpx.AsyncClient(timeout=15.0) as client:
-        if webhook:
+        if _channel_enabled(settings, "notify_webhook_enabled") and webhook:
             try:
                 r = await client.post(
                     webhook,
@@ -70,7 +165,7 @@ async def send_notification(
             except httpx.HTTPError as e:
                 logger.warning("Webhook notify failed: %s", e)
 
-        if ntfy:
+        if _channel_enabled(settings, "notify_ntfy_enabled") and ntfy:
             topic = ntfy.lstrip("/")
             url = f"https://ntfy.sh/{topic}" if not ntfy.startswith("http") else ntfy
             try:
