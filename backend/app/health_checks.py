@@ -16,7 +16,7 @@ from app.json_util import safe_float
 from app.models import DeviceSnapshot, Reading
 from app.pvs_client import PvsClient
 from app.settings_store import site_timezone_from_settings, temp_config_from_settings
-from app.timezone_util import is_daylight_local
+from app.timezone_util import is_daylight_local, is_sunset_ramp_local
 
 logger = logging.getLogger(__name__)
 
@@ -212,8 +212,13 @@ async def evaluate_site_health(
                     )
                 )
 
-    # --- Sudden production drop ---
-    if len(recent_rows) >= 5:
+    # --- Sudden production drop (mid-day only; skip normal sunset ramp) ---
+    tz_name = site_timezone_from_settings(settings)
+    if (
+        len(recent_rows) >= 5
+        and _is_daylight(now, settings)
+        and not is_sunset_ramp_local(tz_name, now)
+    ):
         recent_cut = now - timedelta(minutes=PRODUCTION_DROP_RECENT_MIN)
         base_end = now - timedelta(minutes=PRODUCTION_DROP_RECENT_MIN)
         base_start = now - timedelta(minutes=PRODUCTION_DROP_BASELINE_MIN)
@@ -248,7 +253,10 @@ async def evaluate_site_health(
                         f"Recent average {recent_avg:.2f} kW vs {baseline_avg:.2f} kW "
                         f"in the prior window (~{PRODUCTION_DROP_BASELINE_MIN - PRODUCTION_DROP_RECENT_MIN} min)."
                     ),
-                    detail="May be clouds passing, inverter fault, or grid event.",
+                    detail=(
+                        "May be clouds passing, inverter fault, or grid event. "
+                        "Ignored during the last few hours before sunset (normal ramp-down)."
+                    ),
                 )
             )
 

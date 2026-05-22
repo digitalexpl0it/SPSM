@@ -52,6 +52,11 @@ export function PowerChart({ data, range }: Props) {
           />
           <YAxis stroke="#6b7280" fontSize={11} unit=" kW" />
           <Tooltip
+            cursor={{
+              fill: "rgba(34, 211, 238, 0.08)",
+              stroke: "rgba(34, 211, 238, 0.25)",
+              strokeWidth: 1,
+            }}
             contentStyle={{
               background: "#0d0d12",
               border: "1px solid rgba(34,211,238,0.3)",

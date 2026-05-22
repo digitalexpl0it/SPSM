@@ -139,7 +139,7 @@ export function HealthPage() {
             </div>
           </div>
 
-          <details className="card-glow p-5 group" open>
+          <details className="card-glow p-5 group">
             <summary className="text-sm font-medium text-cyan-glow/90 flex items-center gap-2 cursor-pointer select-none list-none [&::-webkit-details-marker]:hidden">
               <Info className="w-4 h-4 shrink-0" />
               What we check
@@ -161,7 +161,9 @@ export function HealthPage() {
                     })
                   : defaultHealthThresholdsLine("f")}
               </li>
-              <li>Sharp drop vs recent average production</li>
+              <li>
+                Sharp drop vs recent average (mid-day only — skipped near sunset)
+              </li>
               <li>Non-zero MID / transfer switch state</li>
               <li>Fault / alarm / error fields in latest inverter or system snapshots</li>
             </ul>

@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useState } from "react";
-import { Bar, BarChart, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
-import { BarChart3, Download, Loader2 } from "lucide-react";
+import { BarChart3, Download, Home, Leaf, Loader2, PlugZap, Sun } from "lucide-react";
 import { Link } from "react-router-dom";
+import { ReportsEnergyChart } from "../components/ReportsEnergyChart";
+import { StatCard } from "../components/StatCard";
 import { SolarThrobber } from "../components/SolarThrobber";
 import { reportsApi, type DailyReportResponse } from "../lib/api";
 import { getSiteTimezone, loadSiteSettings } from "../lib/siteSettings";
@@ -110,42 +111,34 @@ export function ReportsPage() {
 
       {data && (
         <>
-          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-            <div className="card-glow p-4">
-              <p className="text-xs text-mist">Solar produced</p>
-              <p className="text-2xl font-bold text-amber-300">{data.totals.pv_kwh} kWh</p>
-            </div>
-            <div className="card-glow p-4">
-              <p className="text-xs text-mist">Home load</p>
-              <p className="text-2xl font-bold text-purple-300">{data.totals.load_kwh} kWh</p>
-            </div>
-            <div className="card-glow p-4">
-              <p className="text-xs text-mist">Grid export</p>
-              <p className="text-2xl font-bold text-emerald-300">{data.totals.export_kwh} kWh</p>
-            </div>
-            <div className="card-glow p-4">
-              <p className="text-xs text-mist">Est. CO₂ offset</p>
-              <p className="text-2xl font-bold text-cyan-glow">{data.totals.co2_kg} kg</p>
-            </div>
+          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-2 xl:grid-cols-4">
+            <StatCard
+              icon={Sun}
+              label="Solar produced"
+              value={`${data.totals.pv_kwh} kWh`}
+              accent="amber"
+            />
+            <StatCard
+              icon={Home}
+              label="Home load"
+              value={`${data.totals.load_kwh} kWh`}
+              accent="cyan"
+            />
+            <StatCard
+              icon={PlugZap}
+              label="Grid export"
+              value={`${data.totals.export_kwh} kWh`}
+              accent="emerald"
+            />
+            <StatCard
+              icon={Leaf}
+              label="Est. CO₂ offset"
+              value={`${data.totals.co2_kg} kg`}
+              accent="purple"
+            />
           </div>
 
-          <div className="card-glow p-4 h-72">
-            <ResponsiveContainer width="100%" height="100%">
-              <BarChart data={chartData}>
-                <CartesianGrid strokeDasharray="3 3" stroke="rgba(34,211,238,0.08)" />
-                <XAxis dataKey="date" tick={{ fill: "#94a3b8", fontSize: 11 }} />
-                <YAxis tick={{ fill: "#94a3b8", fontSize: 11 }} unit=" kWh" />
-                <Tooltip
-                  contentStyle={{
-                    background: "#0f172a",
-                    border: "1px solid rgba(34,211,238,0.2)",
-                  }}
-                />
-                <Bar dataKey="pv" name="PV kWh" fill="#fbbf24" radius={[4, 4, 0, 0]} />
-                <Bar dataKey="load" name="Load kWh" fill="#a78bfa" radius={[4, 4, 0, 0]} />
-              </BarChart>
-            </ResponsiveContainer>
-          </div>
+          <ReportsEnergyChart data={chartData} />
 
           <div className="card-glow overflow-hidden">
             <table className="table-zebra">
