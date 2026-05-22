@@ -46,6 +46,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         localStorage.removeItem("token");
         setToken(null);
       }
+      // Status unreachable — prefer sign-in UI over first-account setup
+      setHasUser(true);
     } finally {
       setLoading(false);
     }

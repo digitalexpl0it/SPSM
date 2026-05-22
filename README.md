@@ -38,7 +38,7 @@ Daily PV / load / import / export, summary cards, bar chart, year-over-year comp
 - **System** — PVS supervisor info, optional raw meter dump
 - **Reports** — daily PV / load / grid import & export, CO₂ estimate, 7/30/90-day ranges, year-over-year comparison, CSV export, weakest-panel snapshot
 - **Settings** — tabbed UI (**System**, **Notifications**, **Accounts**); toggle switches; toast feedback on save and connection/notify tests
-- **Notifications** — master enable plus per-channel toggles for **webhook** (Discord/Slack), **ntfy**, and **SMTP email** (STARTTLS on port 587, e.g. [Mailtrap](https://mailtrap.io) live SMTP)
+- **Notifications** — master enable plus per-channel toggles for **webhook** (Discord/Slack), **ntfy**, and **SMTP email** (STARTTLS on port 587, e.g. [Mailtrap](https://mailtrap.io) live SMTP); optional **monthly report** email (previous calendar month summary, sent on the 1st in site timezone)
 - **Accounts** — admin user management (create / edit / delete portal users)
 - **System health** — rule-based alerts with history; optional push on new critical/warning events (debounced)
 - **Background collector** — polls the PVS on a schedule and stores time-series data in PostgreSQL
@@ -114,6 +114,10 @@ Open **http://localhost:5173**
 4. Optional: **Settings → Notifications** — enable channels, configure webhook / ntfy / SMTP, **Save**, then **Send test notification**.
 5. Open the **Dashboard** — live data appears once the collector and PVS connection are working.
 
+### Phone or tablet on your LAN
+
+Use your computer’s LAN address, not `localhost` — e.g. **http://192.168.1.10:5173** (same Wi‑Fi as the Docker host). The UI talks to the API through the Vite proxy on that port, so you do not need `VITE_API_URL=http://localhost:8000` in Docker (that breaks mobile login with “Failed to fetch”). After changing `docker-compose.yml`, run `docker compose up -d --build web api`.
+
 PostgreSQL runs **inside Docker only** (no host port `5432` by default), so it won’t conflict with a local Postgres install. To query from the host, add `"5433:5432"` under `db.ports` in `docker-compose.yml`.
 
 ### Rebuild after code changes
@@ -155,9 +159,11 @@ curl -sk -b /tmp/pvs.txt "https://$PVS_IP/vars?match=livedata&fmt=obj" | head
 | `notify_ntfy_enabled` + `notify_ntfy_topic` | [ntfy.sh](https://ntfy.sh) topic or full URL |
 | `notify_smtp_enabled` + SMTP fields | Email via SMTP with STARTTLS (typical port **587**) |
 | `notify_min_severity` | `critical` or `warning` — minimum level that triggers a send |
-| `portal_public_url` | Base URL for links in alert emails (e.g. `http://192.168.1.50:5173`) — set in **Settings → Notifications** or `PORTAL_PUBLIC_URL` in `.env` |
+| `portal_public_url` | Base URL for links in alert and monthly report emails (e.g. `http://192.168.1.50:5173`) — set in **Settings → Notifications** or `PORTAL_PUBLIC_URL` in `.env` |
+| `monthly_report_enabled` | Email-only previous-month summary on the **1st** of each month (site timezone); requires SMTP host, from, and to configured |
 | `PORTAL_PUBLIC_URL` | Optional env override for email links (same as above; used if UI value is empty) |
-| `CORS_ORIGINS` | Allowed browser origins for the API (fallback for email links only if portal URL unset) |
+| `CORS_ORIGINS` | Allowed browser origins for the API when using a separate API host |
+| `CORS_ALLOW_PRIVATE_NETWORKS` | Docker default `true` — allows `192.168.x.x` / `10.x` UI origins (phones on LAN) |
 
 Settings are stored in the database and editable from the UI.
 
@@ -174,6 +180,10 @@ Settings are stored in the database and editable from the UI.
 | To | Alert recipient (comma-separated allowed) |
 
 Enable **SMTP email** on the Notifications tab, save, then use **Send test notification**. The server uses **saved** settings for tests and live alerts—not unsaved form values.
+
+#### Monthly report email
+
+On **Settings → Notifications**, the right column has **Monthly report**. You must fill SMTP host, from, and to (same fields as alert email) before the toggle can be turned on. The collector sends one email on the **1st** of each month for the **previous calendar month** (PV, load, grid import/export, CO₂, month-over-month %). Use **Send sample monthly report** to preview after saving SMTP settings. This is independent of the alert **Enable notifications** master switch.
 
 ### Backfill chart rollups
 

@@ -51,6 +51,11 @@ def smtp_configured(settings: dict[str, str]) -> bool:
     return bool(host and to_addrs and from_addr)
 
 
+def smtp_ready_for_reports(settings: dict[str, str]) -> bool:
+    """Monthly report emails require SMTP host, from, and recipients."""
+    return smtp_configured(settings)
+
+
 def _smtp_recipients(settings: dict[str, str]) -> list[str]:
     raw = (settings.get("notify_smtp_to") or "").strip()
     if not raw:
@@ -122,6 +127,148 @@ def _portal_base_url(settings: dict[str, str]) -> str | None:
 def _portal_health_url(settings: dict[str, str]) -> str | None:
     base = _portal_base_url(settings)
     return f"{base}/health" if base else None
+
+
+def _portal_reports_url(settings: dict[str, str]) -> str | None:
+    base = _portal_base_url(settings)
+    return f"{base}/reports" if base else None
+
+
+def _pct_change_label(current: float, prior: float) -> str:
+    if prior <= 0.01:
+        return "—"
+    pct = ((current - prior) / prior) * 100
+    return f"{pct:+.0f}% vs prior month"
+
+
+def _metric_row_html(label: str, value: str, sub: str = "") -> str:
+    sub_html = (
+        f'<div style="font-size:12px;color:#64748b;margin-top:2px;">{escape(sub)}</div>'
+        if sub
+        else ""
+    )
+    return f"""
+      <tr>
+        <td style="padding:12px 0;border-bottom:1px solid #f1f5f9;color:#64748b;font-size:14px;">{escape(label)}</td>
+        <td style="padding:12px 0;border-bottom:1px solid #f1f5f9;text-align:right;color:#0f172a;font-size:16px;font-weight:600;">{escape(value)}{sub_html}</td>
+      </tr>"""
+
+
+def _build_monthly_report_bodies(
+    settings: dict[str, str],
+    payload: dict[str, Any],
+) -> tuple[str, str, str]:
+    """Return (subject, plain, html)."""
+    site = _site_label(settings)
+    month_label = str(payload["month_label"])
+    totals = payload["current"]["totals"]
+    period = payload["current"]["period"]
+    days_with = payload["current"]["days_with_data"]
+    days_in = payload["current"]["days_in_period"]
+    prior = payload.get("prior_month") or {}
+    prior_totals = prior.get("totals") or {}
+    prior_available = prior.get("available", False)
+    prior_label = str(prior.get("month_label") or "prior month")
+    reports_url = _portal_reports_url(settings)
+
+    subject = f"SPSM · {month_label} solar report — {site}"
+
+    plain_lines = [
+        f"SPSM Solar Portal — Monthly energy report",
+        f"",
+        f"{month_label} ({period['start']} to {period['end']})",
+        f"Site: {site}",
+        f"",
+        f"Solar produced: {totals['pv_kwh']} kWh",
+        f"Home load: {totals['load_kwh']} kWh",
+        f"Grid import: {totals['import_kwh']} kWh",
+        f"Grid export: {totals['export_kwh']} kWh",
+        f"Est. CO₂ offset: {totals['co2_kg']} kg",
+        f"",
+        f"Data coverage: {days_with} of {days_in} days",
+    ]
+    if prior_available:
+        plain_lines.extend(
+            [
+                "",
+                f"Compared to {prior_label}:",
+                f"  Solar: {_pct_change_label(totals['pv_kwh'], prior_totals.get('pv_kwh', 0))}",
+                f"  Load: {_pct_change_label(totals['load_kwh'], prior_totals.get('load_kwh', 0))}",
+            ]
+        )
+    if reports_url:
+        plain_lines.extend(["", f"Full reports: {reports_url}"])
+    plain_lines.extend(["", "— SPSM (self-hosted SunPower monitoring)"])
+    plain = "\n".join(plain_lines)
+
+    rows = [
+        _metric_row_html("Solar produced", f"{totals['pv_kwh']} kWh"),
+        _metric_row_html("Home load", f"{totals['load_kwh']} kWh"),
+        _metric_row_html("Grid import", f"{totals['import_kwh']} kWh"),
+        _metric_row_html("Grid export", f"{totals['export_kwh']} kWh"),
+        _metric_row_html("Est. CO₂ offset", f"{totals['co2_kg']} kg"),
+        _metric_row_html("Data coverage", f"{days_with} of {days_in} days"),
+    ]
+    if prior_available:
+        rows[0] = _metric_row_html(
+            "Solar produced",
+            f"{totals['pv_kwh']} kWh",
+            _pct_change_label(totals["pv_kwh"], prior_totals.get("pv_kwh", 0)),
+        )
+        rows[1] = _metric_row_html(
+            "Home load",
+            f"{totals['load_kwh']} kWh",
+            _pct_change_label(totals["load_kwh"], prior_totals.get("load_kwh", 0)),
+        )
+
+    cta_html = ""
+    if reports_url:
+        cta_html = f"""
+          <table width="100%" cellpadding="0" cellspacing="0" style="margin:20px 0 0;">
+            <tr><td align="center">
+              <a href="{escape(reports_url)}" style="display:inline-block;padding:14px 28px;background:#0891b2;color:#ffffff;font-size:15px;font-weight:700;text-decoration:none;border-radius:8px;">View full reports</a>
+            </td></tr>
+          </table>"""
+
+    html = f"""<!DOCTYPE html>
+<html>
+<head><meta charset="utf-8"><meta name="color-scheme" content="light"></head>
+<body style="margin:0;padding:0;background:#e8eef3;font-family:Segoe UI,system-ui,sans-serif;">
+  <table width="100%" cellpadding="0" cellspacing="0" style="background:#e8eef3;padding:28px 12px;">
+    <tr><td align="center">
+      <p style="margin:0 0 16px;font-size:13px;font-weight:700;letter-spacing:0.08em;color:#0891b2;text-transform:uppercase;">SPSM Solar Portal</p>
+      <table width="100%" style="max-width:520px;border-collapse:separate;">
+        <tr><td style="background:#0891b2;padding:20px 24px;text-align:center;border-radius:10px 10px 0 0;">
+          <p style="margin:0;font-size:11px;font-weight:700;letter-spacing:0.14em;color:#e0f2fe;">MONTHLY ENERGY REPORT</p>
+          <h1 style="margin:10px 0 0;font-size:24px;line-height:1.25;color:#ffffff;font-weight:700;">{escape(month_label)}</h1>
+          <p style="margin:8px 0 0;font-size:13px;color:#e0f2fe;">{escape(site)} · {escape(period['start'])} – {escape(period['end'])}</p>
+        </td></tr>
+        <tr><td style="background:#ffffff;border:1px solid #e2e8f0;border-top:none;border-radius:0 0 10px 10px;padding:22px 24px 24px;">
+          <p style="margin:0 0 16px;font-size:15px;line-height:1.55;color:#475569;">Here is your solar production and usage summary for the previous calendar month.</p>
+          <table width="100%" cellpadding="0" cellspacing="0">{"".join(rows)}</table>
+          {cta_html}
+        </td></tr>
+      </table>
+      <p style="margin:20px 0 0;font-size:11px;color:#94a3b8;text-align:center;max-width:520px;">
+        Sent automatically on the 1st of each month · not affiliated with SunPower
+      </p>
+    </td></tr>
+  </table>
+</body>
+</html>"""
+    return subject, plain, html
+
+
+async def send_monthly_report_email(settings: dict[str, str], payload: dict[str, Any]) -> bool:
+    if not smtp_ready_for_reports(settings):
+        return False
+    subject, plain, html = _build_monthly_report_bodies(settings, payload)
+    return await _send_smtp_email(
+        settings,
+        subject=subject,
+        body_plain=plain,
+        body_html=html,
+    )
 
 
 def _severity_styles(severity: str) -> dict[str, str]:

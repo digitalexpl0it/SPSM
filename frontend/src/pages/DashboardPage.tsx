@@ -18,7 +18,7 @@ import { StatCard } from "../components/StatCard";
 import { dataApi, type LiveResponse, type Reading, type SeriesPoint, type SummaryResponse } from "../lib/api";
 import { loadSiteSettings } from "../lib/siteSettings";
 
-const API = import.meta.env.VITE_API_URL || "";
+import { apiUrl } from "../lib/api";
 
 const RANGES = ["hour", "day", "week", "month", "year"] as const;
 type Range = (typeof RANGES)[number];
@@ -90,7 +90,7 @@ export function DashboardPage() {
       const token = localStorage.getItem("token");
       if (settings.websocket_live === "true" && token) {
         es = new EventSource(
-          `${API}/api/live/stream?token=${encodeURIComponent(token)}`
+          `${apiUrl("/api/live/stream")}?token=${encodeURIComponent(token)}`
         );
         es.onmessage = (ev) => {
           try {

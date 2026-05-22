@@ -29,13 +29,19 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(title="SPSM Solar Portal", version="0.1.0", lifespan=lifespan)
 
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=settings.cors_origin_list,
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
+_cors_kwargs: dict = {
+    "allow_credentials": True,
+    "allow_methods": ["*"],
+    "allow_headers": ["*"],
+}
+if settings.cors_allow_private_networks:
+    _cors_kwargs["allow_origin_regex"] = (
+        r"https?://(localhost|127\.0\.0\.1|192\.168\.\d{1,3}\.\d{1,3}|10\.\d{1,3}\.\d{1,3}\.\d{1,3})(:\d+)?$"
+    )
+else:
+    _cors_kwargs["allow_origins"] = settings.cors_origin_list
+
+app.add_middleware(CORSMiddleware, **_cors_kwargs)
 
 app.include_router(auth.router)
 app.include_router(settings_router.router)

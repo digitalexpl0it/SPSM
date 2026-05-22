@@ -11,6 +11,7 @@ import {
   Server,
   Shield,
   Thermometer,
+  BarChart3,
   Bell,
   Timer,
   UserCircle,
@@ -44,6 +45,19 @@ type SettingsTab = "system" | "notifications" | "accounts";
 
 /** Placeholder only — not a real device serial. */
 const EXAMPLE_PVS_SERIAL = "ZT223485000000W0000";
+
+function isSmtpConfigured(form: {
+  notify_smtp_host: string;
+  notify_smtp_to: string;
+  notify_smtp_from: string;
+  notify_smtp_username: string;
+}) {
+  return Boolean(
+    form.notify_smtp_host.trim() &&
+      form.notify_smtp_to.trim() &&
+      (form.notify_smtp_from.trim() || form.notify_smtp_username.trim())
+  );
+}
 
 const TABS: { id: SettingsTab; label: string; icon: typeof Wrench }[] = [
   { id: "system", label: "System", icon: Wrench },
@@ -88,12 +102,14 @@ export function SettingsPage() {
     notify_smtp_from: "",
     notify_smtp_to: "",
     portal_public_url: "",
+    monthly_report_enabled: false,
     setup_complete: false,
   });
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [testing, setTesting] = useState(false);
   const [testingNotify, setTestingNotify] = useState(false);
+  const [testingMonthlyReport, setTestingMonthlyReport] = useState(false);
 
   useEffect(() => {
     settingsApi
@@ -149,6 +165,7 @@ export function SettingsPage() {
           portal_public_url:
             s.portal_public_url?.trim() ||
             (typeof window !== "undefined" ? window.location.origin : ""),
+          monthly_report_enabled: s.monthly_report_enabled === "true",
           setup_complete: s.setup_complete === "true",
         });
       })
@@ -168,6 +185,18 @@ export function SettingsPage() {
       showToast("error", formatErrorMessage(e));
     } finally {
       setTesting(false);
+    }
+  };
+
+  const testMonthlyReport = async () => {
+    setTestingMonthlyReport(true);
+    try {
+      const res = await settingsApi.testMonthlyReport();
+      showToast("success", res.message);
+    } catch (e) {
+      showToast("error", formatErrorMessage(e));
+    } finally {
+      setTestingMonthlyReport(false);
     }
   };
 
@@ -593,7 +622,8 @@ export function SettingsPage() {
       )}
 
       {tab === "notifications" && (
-        <form onSubmit={save} className="space-y-6 max-w-xl">
+        <form onSubmit={save} className="space-y-6 max-w-5xl">
+          <div className="grid gap-6 lg:grid-cols-2 lg:items-start">
           <section className="card-glow p-6 space-y-4">
             <h2 className="text-lg font-semibold flex items-center gap-2 text-cyan-glow">
               <Bell className="w-5 h-5" />
@@ -775,26 +805,74 @@ export function SettingsPage() {
                 <option value="warning">Warning and critical</option>
               </select>
             </div>
-          </section>
-
-          <p className="text-xs text-mist">
-            Save settings before sending a test — the server uses your saved configuration. The test
-            email shows sample Warning and Critical alerts (same layout as real health emails).
-          </p>
-
-          <div className="flex flex-wrap gap-3">
             <button
               type="button"
               disabled={testingNotify}
               onClick={testNotification}
-              className="text-sm text-cyan-glow border border-cyan/30 px-4 py-2 rounded-lg hover:bg-cyan/10"
+              className="text-sm text-cyan-glow border border-cyan/30 px-4 py-2 rounded-lg hover:bg-cyan/10 w-full sm:w-auto"
             >
-              {testingNotify ? "Sending…" : "Send test notification"}
+              {testingNotify ? "Sending…" : "Send test alert email"}
             </button>
-            <button type="submit" className="btn-primary" disabled={saving}>
-              {saving ? "Saving…" : "Save settings"}
+          </section>
+
+          <section className="card-glow p-6 space-y-4">
+            <h2 className="text-lg font-semibold flex items-center gap-2 text-cyan-glow">
+              <BarChart3 className="w-5 h-5" />
+              Monthly report
+            </h2>
+            <p className="text-sm text-mist">
+              Email-only summary of the previous calendar month (PV, load, grid, CO₂). Sent
+              automatically on the 1st of each month in your site timezone.
+            </p>
+            <Toggle
+              checked={form.monthly_report_enabled}
+              onChange={(monthly_report_enabled) => {
+                if (monthly_report_enabled && !isSmtpConfigured(form)) {
+                  showToast(
+                    "error",
+                    "Configure SMTP host, from, and to addresses in the left column before enabling."
+                  );
+                  return;
+                }
+                setForm({ ...form, monthly_report_enabled });
+              }}
+              label="Enable monthly report email"
+              description={
+                isSmtpConfigured(form)
+                  ? "Uses the same SMTP settings as alert emails"
+                  : "Requires SMTP host, from, and to below"
+              }
+              disabled={!isSmtpConfigured(form) && !form.monthly_report_enabled}
+            />
+            {!isSmtpConfigured(form) && (
+              <p className="text-xs text-amber-400/90">
+                Fill in SMTP host, from, and to under Alert notifications, then save settings.
+              </p>
+            )}
+            <button
+              type="button"
+              disabled={testingMonthlyReport || !isSmtpConfigured(form)}
+              onClick={testMonthlyReport}
+              className="text-sm text-cyan-glow border border-cyan/30 px-4 py-2 rounded-lg hover:bg-cyan/10 w-full sm:w-auto disabled:opacity-50"
+            >
+              {testingMonthlyReport ? "Sending…" : "Send sample monthly report"}
             </button>
+            <p className="text-xs text-mist">
+              Sample uses the previous calendar month from your stored readings. Save SMTP settings
+              before testing.
+            </p>
+          </section>
           </div>
+
+          <p className="text-xs text-mist">
+            Save settings before testing — the server uses your saved configuration. Alert test
+            emails show Warning &amp; Critical samples; monthly test sends a production report
+            layout.
+          </p>
+
+          <button type="submit" className="btn-primary" disabled={saving}>
+            {saving ? "Saving…" : "Save settings"}
+          </button>
         </form>
       )}
 

@@ -1,4 +1,6 @@
-const API = import.meta.env.VITE_API_URL || "";
+import { apiUrl, formatNetworkError, resolveApiBaseUrl } from "./apiBase";
+
+export { apiUrl, resolveApiBaseUrl };
 
 function formatApiDetail(detail: unknown): string {
   if (typeof detail === "string") return detail;
@@ -24,32 +26,39 @@ function headers(): HeadersInit {
 }
 
 export async function api<T>(path: string, options?: RequestInit): Promise<T> {
-  const res = await fetch(`${API}${path}`, {
-    ...options,
-    headers: { ...headers(), ...options?.headers },
-  });
-  if (!res.ok) {
-    const err = await res.json().catch(() => ({ detail: res.statusText }));
-    throw new Error(formatApiDetail(err.detail) || res.statusText || "Request failed");
+  try {
+    const res = await fetch(apiUrl(path), {
+      ...options,
+      headers: { ...headers(), ...options?.headers },
+    });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({ detail: res.statusText }));
+      throw new Error(formatApiDetail(err.detail) || res.statusText || "Request failed");
+    }
+    if (res.status === 204) return undefined as T;
+    const text = await res.text();
+    if (!text) return undefined as T;
+    return JSON.parse(text) as T;
+  } catch (e) {
+    throw formatNetworkError(e);
   }
-  if (res.status === 204) return undefined as T;
-  const text = await res.text();
-  if (!text) return undefined as T;
-  return JSON.parse(text) as T;
 }
 
 export const authApi = {
   status: () => api<{ has_user: boolean; setup_complete: boolean }>("/api/auth/status"),
-  login: (username: string, password: string) => {
+  login: async (username: string, password: string) => {
     const body = new URLSearchParams({ username, password });
-    return fetch(`${API}/api/auth/login`, {
-      method: "POST",
-      headers: { "Content-Type": "application/x-www-form-urlencoded" },
-      body,
-    }).then(async (r) => {
+    try {
+      const r = await fetch(apiUrl("/api/auth/login"), {
+        method: "POST",
+        headers: { "Content-Type": "application/x-www-form-urlencoded" },
+        body,
+      });
       if (!r.ok) throw new Error("Invalid credentials");
       return r.json() as Promise<{ access_token: string; setup_required: boolean }>;
-    });
+    } catch (e) {
+      throw formatNetworkError(e);
+    }
   },
   register: (username: string, password: string) =>
     api<{ access_token: string; setup_required: boolean }>("/api/auth/register", {
@@ -76,6 +85,10 @@ export const settingsApi = {
     ),
   testNotify: () =>
     api<{ ok: boolean; message: string }>("/api/settings/test-notify", { method: "POST" }),
+  testMonthlyReport: () =>
+    api<{ ok: boolean; message: string }>("/api/settings/test-monthly-report", {
+      method: "POST",
+    }),
 };
 
 export interface DailyReportDay {
@@ -131,7 +144,7 @@ export interface HealthHistoryEvent {
 
 export const reportsApi = {
   daily: (days: number) => api<DailyReportResponse>(`/api/reports/daily?days=${days}`),
-  exportCsvUrl: (days: number) => `${API}/api/reports/export?days=${days}`,
+  exportCsvUrl: (days: number) => apiUrl(`/api/reports/export?days=${days}`),
   inverterRank: () =>
     api<{ ts: string; items: { path: string; serial: string; kw: number; temp: number | null }[] }>(
       "/api/reports/inverters/rank"

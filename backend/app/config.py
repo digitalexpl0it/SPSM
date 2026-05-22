@@ -7,6 +7,7 @@ class Settings(BaseSettings):
     database_url: str = "postgresql+asyncpg://spsm:spsm_dev_change_me@localhost:5432/spsm"
     secret_key: str = "dev-secret-change-in-production"
     cors_origins: str = "http://localhost:5173"
+    cors_allow_private_networks: bool = False
     portal_public_url: str = ""
     access_token_expire_minutes: int = 60 * 24 * 7  # 7 days
 

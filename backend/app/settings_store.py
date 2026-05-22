@@ -36,6 +36,8 @@ KEYS = {
     "notify_smtp_from": "",
     "notify_smtp_to": "",
     "portal_public_url": "",
+    "monthly_report_enabled": "false",
+    "monthly_report_last_sent": "",
     "co2_kg_per_kwh": "0.4",
     "temp_coefficient_pct_per_c": "-0.30",
 }

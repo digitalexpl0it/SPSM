@@ -3,7 +3,7 @@ from typing import Annotated
 from fastapi import APIRouter, Depends, HTTPException, status
 from fastapi.security import OAuth2PasswordRequestForm
 from pydantic import BaseModel, Field
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.auth import create_access_token, get_current_user, hash_password, verify_password
@@ -69,9 +69,8 @@ async def me(user: Annotated[User, Depends(get_current_user)]):
 
 @router.get("/status")
 async def auth_status(db: Annotated[AsyncSession, Depends(get_db)]):
-    result = await db.execute(select(User))
-    has_user = result.scalar_one_or_none() is not None
+    count = await db.scalar(select(func.count()).select_from(User)) or 0
     return {
-        "has_user": has_user,
+        "has_user": count > 0,
         "setup_complete": await is_setup_complete(db),
     }

@@ -24,6 +24,7 @@ services:
       DATABASE_URL: postgresql+asyncpg://spsm:spsm_dev_change_me@db:5432/spsm
       SECRET_KEY: ${SECRET_KEY:-change-me-in-production-use-openssl-rand-hex-32}
       CORS_ORIGINS: http://localhost:5173,http://localhost:3000
+      CORS_ALLOW_PRIVATE_NETWORKS: "true"
       PORTAL_PUBLIC_URL: ${PORTAL_PUBLIC_URL:-}
     depends_on:
       db:
@@ -47,8 +48,7 @@ services:
     build: ./frontend
     ports:
       - "5173:5173"
-    environment:
-      VITE_API_URL: http://localhost:8000
+    # Leave VITE_API_URL unset so the browser uses same-origin /api (Vite proxy). Required for mobile LAN access.
     volumes:
       - ./frontend:/app
       - /app/node_modules

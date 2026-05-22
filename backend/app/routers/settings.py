@@ -7,7 +7,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.auth import get_current_user
 from app.database import get_db
 from app.models import User
-from app.notifier import explain_notification_block, send_notification
+from app.monthly_report import send_monthly_report_now
+from app.notifier import explain_notification_block, send_notification, smtp_ready_for_reports
 from app.pvs_client import PvsClient
 from app.settings_store import get_all_settings, get_setting, is_setup_complete, set_setting
 from app.timezone_util import DEFAULT_TIMEZONE
@@ -46,6 +47,7 @@ class SettingsUpdate(BaseModel):
     notify_smtp_from: str | None = None
     notify_smtp_to: str | None = None
     portal_public_url: str | None = None
+    monthly_report_enabled: bool | None = None
     co2_kg_per_kwh: float | None = Field(None, ge=0, le=2)
     temp_coefficient_pct_per_c: float | None = Field(None, ge=-1, le=0)
     setup_complete: bool | None = None
@@ -84,8 +86,28 @@ async def update_settings(
         "notify_ntfy_enabled",
         "notify_smtp_enabled",
         "notify_smtp_use_tls",
+        "monthly_report_enabled",
         "setup_complete",
     }
+
+    if mapping.get("monthly_report_enabled"):
+        snapshot = await get_all_settings(db)
+        for key, value in mapping.items():
+            if key in bool_keys:
+                snapshot[key] = "true" if value else "false"
+            elif key == "notify_smtp_port":
+                snapshot[key] = str(int(value)) if value is not None else "587"
+            elif value is not None:
+                snapshot[key] = str(value)
+        if not smtp_ready_for_reports(snapshot):
+            raise HTTPException(
+                status_code=400,
+                detail=(
+                    "Monthly report requires SMTP to be configured (host, from, and to addresses) "
+                    "before it can be enabled."
+                ),
+            )
+
     for key, value in mapping.items():
         if key in bool_keys:
             await set_setting(db, key, "true" if value else "false")
@@ -160,3 +182,14 @@ async def test_notify(
             ),
         )
     return {"ok": True, "message": "Test notification sent"}
+
+
+@router.post("/test-monthly-report")
+async def test_monthly_report(
+    _: Annotated[User, Depends(get_current_user)],
+    db: Annotated[AsyncSession, Depends(get_db)],
+):
+    ok, message = await send_monthly_report_now(db)
+    if not ok:
+        raise HTTPException(status_code=400, detail=message)
+    return {"ok": True, "message": message}
