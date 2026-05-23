@@ -124,6 +124,17 @@ export interface ReportPeriod {
   end: string;
 }
 
+export interface ReportTouPeriod {
+  period: "peak" | "off_peak" | "super_off_peak";
+  label: string;
+  import_kwh: number;
+  export_kwh: number;
+  import_rate: number;
+  export_rate: number;
+  import_cost: number;
+  export_credit: number;
+}
+
 export interface ReportSavings {
   self_consumption_kwh: number;
   import_cost: number;
@@ -133,6 +144,9 @@ export interface ReportSavings {
   import_rate: number;
   export_rate: number;
   nem_plan?: "nem1" | "nem2" | "nem3" | "custom";
+  method?: "blended" | "tou";
+  tou_schedule?: string;
+  tou_periods?: ReportTouPeriod[];
 }
 
 export interface DailyReportResponse {

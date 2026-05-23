@@ -57,6 +57,8 @@ class SettingsUpdate(BaseModel):
     tou_peak_rate: float | None = Field(None, ge=0, le=10)
     tou_off_peak_rate: float | None = Field(None, ge=0, le=10)
     tou_super_off_peak_rate: float | None = Field(None, ge=0, le=10)
+    tou_estimates_enabled: bool | None = None
+    tou_schedule: str | None = Field(None, pattern="^(sce_tou_d_4_9|all_off_peak)$")
     temp_coefficient_pct_per_c: float | None = Field(None, ge=-1, le=0)
     derating_display_enabled: bool | None = None
     notify_quiet_hours_enabled: bool | None = None
@@ -122,6 +124,7 @@ async def update_settings(
         "monthly_report_enabled",
         "derating_display_enabled",
         "health_sunrise_ramp_smart",
+        "tou_estimates_enabled",
         "setup_complete",
     }
 
@@ -162,6 +165,13 @@ async def update_settings(
             plan = (str(value).strip().lower() if value else "") or "nem2"
             await set_setting(
                 db, key, plan if plan in ("nem1", "nem2", "nem3", "custom") else "custom"
+            )
+        elif key == "tou_schedule":
+            sched = (str(value).strip().lower() if value else "") or "sce_tou_d_4_9"
+            await set_setting(
+                db,
+                key,
+                sched if sched in ("sce_tou_d_4_9", "all_off_peak") else "sce_tou_d_4_9",
             )
         elif key in (
             "co2_kg_per_kwh",

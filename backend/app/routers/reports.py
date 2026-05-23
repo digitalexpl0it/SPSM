@@ -22,11 +22,10 @@ from app.report_period import (
     day_keys_for_range,
     days_list_from_keys,
     readings_for_local_period,
-    savings_from_totals,
+    savings_for_period,
     totals_from_days,
 )
 from app.settings_store import (
-    effective_electricity_rates,
     get_all_settings,
     site_timezone_from_settings,
 )
@@ -60,11 +59,7 @@ async def daily_report(
     current_by_day = day_energy(current_rows, tz)
     days_list = days_list_from_keys(current_by_day, current_keys, co2_factor)
     totals = totals_from_days(days_list)
-    import_rate, export_rate, nem_plan = effective_electricity_rates(settings)
-    savings = savings_from_totals(
-        totals, import_rate=import_rate, export_rate=export_rate
-    )
-    savings["nem_plan"] = nem_plan
+    savings = savings_for_period(settings, totals, current_rows, tz)
 
     yoy_keys = _period_day_keys(local_now.date(), days, year_shift=YEAR_AGO_SHIFT_DAYS)
     yoy_rows = await readings_for_local_period(db, yoy_keys, tz)

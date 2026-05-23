@@ -153,6 +153,8 @@ export function SettingsPage() {
     tou_peak_rate: 0,
     tou_off_peak_rate: 0,
     tou_super_off_peak_rate: 0,
+    tou_estimates_enabled: false,
+    tou_schedule: "sce_tou_d_4_9" as "sce_tou_d_4_9" | "all_off_peak",
     temp_coefficient_pct_per_c: -0.3,
     derating_display_enabled: false,
     notify_quiet_hours_enabled: false,
@@ -236,6 +238,9 @@ export function SettingsPage() {
           tou_peak_rate: parseFloat(s.tou_peak_rate || "") || 0,
           tou_off_peak_rate: parseFloat(s.tou_off_peak_rate || "") || 0,
           tou_super_off_peak_rate: parseFloat(s.tou_super_off_peak_rate || "") || 0,
+          tou_estimates_enabled: s.tou_estimates_enabled === "true",
+          tou_schedule:
+            s.tou_schedule === "all_off_peak" ? "all_off_peak" : "sce_tou_d_4_9",
           temp_coefficient_pct_per_c: parseFloat(s.temp_coefficient_pct_per_c || "-0.30") || -0.3,
           derating_display_enabled: s.derating_display_enabled === "true",
           notify_quiet_hours_enabled: s.notify_quiet_hours_enabled === "true",
@@ -784,9 +789,53 @@ export function SettingsPage() {
                 </div>
                 <div className="border-t border-surface/80 pt-4 space-y-3">
                   <p className="text-sm text-mist">
-                    Optional time-of-use rates from your utility bill (reference only — enter values
-                    from your rate schedule).
+                    Time-of-use rates from your utility bill. When enabled, Reports attribute grid
+                    import and export to each period using your site timezone.
                   </p>
+                  <Toggle
+                    checked={form.tou_estimates_enabled}
+                    onChange={(tou_estimates_enabled) =>
+                      setForm({ ...form, tou_estimates_enabled })
+                    }
+                    disabled={
+                      form.tou_peak_rate <= 0 &&
+                      form.tou_off_peak_rate <= 0 &&
+                      form.tou_super_off_peak_rate <= 0
+                    }
+                    label="Use TOU rates for savings estimates"
+                    description={
+                      form.tou_peak_rate <= 0 &&
+                      form.tou_off_peak_rate <= 0 &&
+                      form.tou_super_off_peak_rate <= 0
+                        ? "Enter at least one TOU rate below to enable."
+                        : undefined
+                    }
+                  />
+                  {form.tou_estimates_enabled && (
+                    <div>
+                      <label className="text-xs text-mist block mb-1">TOU schedule</label>
+                      <select
+                        className="input-dark w-full max-w-md"
+                        value={form.tou_schedule}
+                        onChange={(e) =>
+                          setForm({
+                            ...form,
+                            tou_schedule: e.target.value as "sce_tou_d_4_9" | "all_off_peak",
+                          })
+                        }
+                      >
+                        <option value="sce_tou_d_4_9">
+                          Weekday peak 4–9 PM (SCE TOU-D style)
+                        </option>
+                        <option value="all_off_peak">All off peak</option>
+                      </select>
+                      <p className="text-xs text-mist mt-1.5 max-w-xl">
+                        {form.tou_schedule === "all_off_peak"
+                          ? "Every hour uses the off-peak rate."
+                          : "Mon–Fri: peak 4–9 PM, super off peak 8 AM–4 PM, off peak otherwise. Weekends all off peak."}
+                      </p>
+                    </div>
+                  )}
                   <div>
                     <label className="text-xs text-mist block mb-1">Rate schedule name</label>
                     <input
@@ -858,6 +907,8 @@ export function SettingsPage() {
                     peakRate: form.tou_peak_rate,
                     offPeakRate: form.tou_off_peak_rate,
                     superOffPeakRate: form.tou_super_off_peak_rate,
+                    estimatesEnabled: form.tou_estimates_enabled,
+                    schedule: form.tou_schedule,
                   }}
                   importRate={form.electricity_import_rate}
                   onApplyAverage={(rate) =>

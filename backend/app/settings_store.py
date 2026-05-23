@@ -47,6 +47,8 @@ KEYS = {
     "tou_peak_rate": "",
     "tou_off_peak_rate": "",
     "tou_super_off_peak_rate": "",
+    "tou_estimates_enabled": "false",
+    "tou_schedule": "sce_tou_d_4_9",
     "temp_coefficient_pct_per_c": "-0.30",
     "derating_display_enabled": "false",
     "notify_quiet_hours_enabled": "false",

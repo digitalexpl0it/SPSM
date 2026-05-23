@@ -127,6 +127,7 @@ def savings_from_totals(
     self_value = round(self_kwh * import_rate, 2)
     net_savings = round(self_value + export_credit - import_cost, 2)
     return {
+        "method": "blended",
         "self_consumption_kwh": self_kwh,
         "import_cost": import_cost,
         "export_credit": export_credit,
@@ -135,6 +136,39 @@ def savings_from_totals(
         "import_rate": import_rate,
         "export_rate": export_rate,
     }
+
+
+def savings_for_period(
+    settings: dict[str, str],
+    totals: dict[str, float],
+    readings: list[Reading],
+    tz_name: str | None,
+) -> dict[str, Any]:
+    """Blended single-rate savings, or TOU when enabled and configured."""
+    from app.settings_store import effective_electricity_rates, electricity_rate_from_settings
+    from app.tou_calc import (
+        savings_from_tou,
+        tou_config_from_settings,
+        tou_energy_from_readings,
+    )
+
+    import_rate, export_rate, nem_plan = effective_electricity_rates(settings)
+    config = tou_config_from_settings(settings)
+    if config is not None:
+        buckets = tou_energy_from_readings(readings, tz_name, config.schedule)
+        flat_export = electricity_rate_from_settings(settings, "electricity_export_rate")
+        return savings_from_tou(
+            totals,
+            buckets,
+            config,
+            flat_export_rate=flat_export,
+        )
+
+    savings = savings_from_totals(
+        totals, import_rate=import_rate, export_rate=export_rate
+    )
+    savings["nem_plan"] = nem_plan
+    return savings
 
 
 async def readings_for_local_period(

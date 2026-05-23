@@ -1,11 +1,32 @@
-/** Optional TOU rates from user settings — reference only; savings still use blended import rate. */
+/** Optional TOU rates from user settings — used for Reports when TOU estimates are enabled. */
+
+export type TouScheduleId = "sce_tou_d_4_9" | "all_off_peak";
 
 export type TouRateConfig = {
   scheduleName: string;
   peakRate: number;
   offPeakRate: number;
   superOffPeakRate: number;
+  estimatesEnabled?: boolean;
+  schedule?: TouScheduleId;
 };
+
+export const TOU_SCHEDULE_OPTIONS: {
+  id: TouScheduleId;
+  label: string;
+  hint: string;
+}[] = [
+  {
+    id: "sce_tou_d_4_9",
+    label: "Weekday peak 4–9 PM (SCE TOU-D style)",
+    hint: "Mon–Fri: peak 4–9 PM, super off peak 8 AM–4 PM, off peak otherwise. Weekends all off peak.",
+  },
+  {
+    id: "all_off_peak",
+    label: "All off peak",
+    hint: "Every hour uses the off-peak rate (simple flat TOU).",
+  },
+];
 
 export function hasTouReference(config: TouRateConfig): boolean {
   return (
@@ -14,6 +35,14 @@ export function hasTouReference(config: TouRateConfig): boolean {
     config.offPeakRate > 0 ||
     config.superOffPeakRate > 0
   );
+}
+
+export function hasTouRatesFilled(config: TouRateConfig): boolean {
+  return config.peakRate > 0 || config.offPeakRate > 0 || config.superOffPeakRate > 0;
+}
+
+export function canUseTouEstimates(config: TouRateConfig): boolean {
+  return Boolean(config.estimatesEnabled) && hasTouRatesFilled(config);
 }
 
 export function averageTouRate(config: TouRateConfig): number | null {
@@ -28,4 +57,8 @@ export function touPeriodsForDisplay(config: TouRateConfig): { label: string; ra
   if (config.offPeakRate > 0) rows.push({ label: "Off peak", rate: config.offPeakRate });
   if (config.superOffPeakRate > 0) rows.push({ label: "Super off peak", rate: config.superOffPeakRate });
   return rows;
+}
+
+export function touScheduleLabel(schedule: TouScheduleId | undefined): string {
+  return TOU_SCHEDULE_OPTIONS.find((o) => o.id === schedule)?.label ?? "TOU schedule";
 }

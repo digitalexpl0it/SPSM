@@ -3,6 +3,7 @@ import { ArrowDownRight, ArrowUpRight, CircleDollarSign, Info, Sun } from "lucid
 import { Link } from "react-router-dom";
 import type { ReportSavings, ReportTotals } from "../lib/api";
 import { NEM_PLAN_LABELS, nemPlanSavingsNote, parseNemPlan } from "../lib/nemPlan";
+import { touScheduleLabel, type TouScheduleId } from "../lib/touRates";
 
 type Props = {
   savings: ReportSavings;
@@ -54,8 +55,14 @@ function fmtRate(n: number) {
   return n.toFixed(2);
 }
 
+function fmtKwh(n: number) {
+  return n.toFixed(2);
+}
+
 export function EstimatedSavingsCard({ savings, totals, periodStart, periodEnd }: Props) {
-  const ratesUnset = savings.import_rate === 0 && savings.export_rate === 0;
+  const isTou = savings.method === "tou";
+  const ratesUnset =
+    !isTou && savings.import_rate === 0 && savings.export_rate === 0;
   const noEnergy =
     totals.pv_kwh === 0 &&
     totals.load_kwh === 0 &&
@@ -65,6 +72,10 @@ export function EstimatedSavingsCard({ savings, totals, periodStart, periodEnd }
   const netPositive = savings.net_savings >= 0;
   const nemPlan = parseNemPlan(savings.nem_plan);
   const planNote = nemPlanSavingsNote(nemPlan);
+  const touImportKwh =
+    savings.tou_periods?.reduce((sum, p) => sum + p.import_kwh, 0) ?? totals.import_kwh;
+  const touExportKwh =
+    savings.tou_periods?.reduce((sum, p) => sum + p.export_kwh, 0) ?? totals.export_kwh;
 
   return (
     <section className="card-glow p-5 sm:p-6 space-y-4 border border-cyan/15">
@@ -75,7 +86,10 @@ export function EstimatedSavingsCard({ savings, totals, periodStart, periodEnd }
             Estimated savings
           </h2>
           <p className="text-xs text-mist mt-1">
-            {periodStart} – {periodEnd} · {NEM_PLAN_LABELS[nemPlan]} · bill impact from kWh totals
+            {periodStart} – {periodEnd} · {NEM_PLAN_LABELS[nemPlan]} ·{" "}
+            {isTou
+              ? `TOU estimate (${touScheduleLabel(savings.tou_schedule as TouScheduleId | undefined)})`
+              : "bill impact from kWh totals"}
           </p>
         </div>
         <div
@@ -125,21 +139,33 @@ export function EstimatedSavingsCard({ savings, totals, periodStart, periodEnd }
           icon={Sun}
           label="Self-consumed value"
           value={fmtUsd(savings.self_consumption_value)}
-          sub={`${savings.self_consumption_kwh} kWh × $${fmtRate(savings.import_rate)}/kWh`}
+          sub={
+            isTou
+              ? `${savings.self_consumption_kwh} kWh × ~$${fmtRate(savings.import_rate)}/kWh (TOU-weighted)`
+              : `${savings.self_consumption_kwh} kWh × $${fmtRate(savings.import_rate)}/kWh`
+          }
           accent="amber"
         />
         <Metric
           icon={ArrowDownRight}
           label="Import cost"
           value={fmtUsd(savings.import_cost)}
-          sub={`${totals.import_kwh} kWh × $${fmtRate(savings.import_rate)}/kWh`}
+          sub={
+            isTou
+              ? `${fmtKwh(touImportKwh)} kWh across TOU periods`
+              : `${totals.import_kwh} kWh × $${fmtRate(savings.import_rate)}/kWh`
+          }
           accent="rose"
         />
         <Metric
           icon={ArrowUpRight}
           label="Export credit"
           value={fmtUsd(savings.export_credit)}
-          sub={`${totals.export_kwh} kWh × $${fmtRate(savings.export_rate)}/kWh`}
+          sub={
+            isTou
+              ? `${fmtKwh(touExportKwh)} kWh across TOU periods`
+              : `${totals.export_kwh} kWh × $${fmtRate(savings.export_rate)}/kWh`
+          }
           accent="emerald"
         />
       </div>
@@ -150,11 +176,39 @@ export function EstimatedSavingsCard({ savings, totals, periodStart, periodEnd }
           <span>How this is calculated</span>
         </summary>
         <div className="px-4 pb-4 text-xs text-mist space-y-2 leading-relaxed border-t border-surface/60 pt-3 mx-4">
-          <p>
-            <strong className="text-cyan-glow/90">Self-consumed</strong> = min(solar produced, home
-            load) — energy your panels covered instead of buying from the grid, valued at your
-            import rate.
-          </p>
+          {isTou ? (
+            <>
+              <p>
+                Grid import and export are split by time-of-use period using timestamped meter
+                readings and your site timezone. Each period uses its own $/kWh rate.
+              </p>
+              {savings.tou_periods && savings.tou_periods.length > 0 && (
+                <ul className="space-y-1 mono text-[11px]">
+                  {savings.tou_periods.map((p) => (
+                    <li key={p.period} className="flex flex-wrap justify-between gap-x-4 gap-y-0.5">
+                      <span>{p.label}</span>
+                      <span className="text-cyan-glow/80 shrink-0 text-right">
+                        in {fmtKwh(p.import_kwh)} @ ${p.import_rate.toFixed(3)} · out{" "}
+                        {fmtKwh(p.export_kwh)} @ ${p.export_rate.toFixed(3)}
+                      </span>
+                    </li>
+                  ))}
+                </ul>
+              )}
+              <p>
+                <strong className="text-cyan-glow/90">Self-consumed value</strong> uses a
+                TOU-weighted average rate (not per-hour solar attribution).
+              </p>
+            </>
+          ) : (
+            <>
+              <p>
+                <strong className="text-cyan-glow/90">Self-consumed</strong> = min(solar produced, home
+                load) — energy your panels covered instead of buying from the grid, valued at your
+                import rate.
+              </p>
+            </>
+          )}
           <p>
             <strong className="text-cyan-glow/90">Net savings</strong> = self-consumed value +
             export credit − import cost.
@@ -164,12 +218,24 @@ export function EstimatedSavingsCard({ savings, totals, periodStart, periodEnd }
             {fmtUsd(savings.import_cost)} = {fmtUsd(savings.net_savings)}
           </p>
           <p>
-            Rates: ${fmtRate(savings.import_rate)}/kWh import, ${fmtRate(savings.export_rate)}/kWh
-            export —{" "}
-            <Link to="/settings?tab=system" className="text-cyan-glow hover:underline">
-              edit in Settings
-            </Link>
-            .
+            {isTou ? (
+              <>
+                TOU-weighted rates: ~${fmtRate(savings.import_rate)}/kWh —{" "}
+                <Link to="/settings?tab=system" className="text-cyan-glow hover:underline">
+                  edit in Settings
+                </Link>
+                .
+              </>
+            ) : (
+              <>
+                Rates: ${fmtRate(savings.import_rate)}/kWh import, ${fmtRate(savings.export_rate)}/kWh
+                export —{" "}
+                <Link to="/settings?tab=system" className="text-cyan-glow hover:underline">
+                  edit in Settings
+                </Link>
+                .
+              </>
+            )}
           </p>
         </div>
       </details>
