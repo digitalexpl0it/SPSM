@@ -25,6 +25,7 @@ import {
   Bug,
 } from "lucide-react";
 import { clearSiteSettingsCache } from "../lib/siteSettings";
+import { TouRateReference } from "../components/TouRateReference";
 import { TimezoneSelect } from "../components/TimezoneSelect";
 import {
   DEFAULT_TEMP_THRESHOLDS,
@@ -148,6 +149,10 @@ export function SettingsPage() {
     electricity_import_rate: 0.25,
     electricity_export_rate: 0.25,
     nem_plan: "nem2" as NemPlan,
+    rate_schedule_name: "",
+    tou_peak_rate: 0,
+    tou_off_peak_rate: 0,
+    tou_super_off_peak_rate: 0,
     temp_coefficient_pct_per_c: -0.3,
     derating_display_enabled: false,
     notify_quiet_hours_enabled: false,
@@ -227,6 +232,10 @@ export function SettingsPage() {
           electricity_import_rate: importRate,
           electricity_export_rate: exportRate,
           nem_plan: nemPlan,
+          rate_schedule_name: s.rate_schedule_name || "",
+          tou_peak_rate: parseFloat(s.tou_peak_rate || "") || 0,
+          tou_off_peak_rate: parseFloat(s.tou_off_peak_rate || "") || 0,
+          tou_super_off_peak_rate: parseFloat(s.tou_super_off_peak_rate || "") || 0,
           temp_coefficient_pct_per_c: parseFloat(s.temp_coefficient_pct_per_c || "-0.30") || -0.3,
           derating_display_enabled: s.derating_display_enabled === "true",
           notify_quiet_hours_enabled: s.notify_quiet_hours_enabled === "true",
@@ -773,6 +782,94 @@ export function SettingsPage() {
                     />
                   </div>
                 </div>
+                <div className="border-t border-surface/80 pt-4 space-y-3">
+                  <p className="text-sm text-mist">
+                    Optional time-of-use rates from your utility bill (reference only — enter values
+                    from your rate schedule).
+                  </p>
+                  <div>
+                    <label className="text-xs text-mist block mb-1">Rate schedule name</label>
+                    <input
+                      className="input-dark w-full max-w-md"
+                      placeholder="e.g. TOU-D-4-9PM"
+                      value={form.rate_schedule_name}
+                      onChange={(e) =>
+                        setForm({ ...form, rate_schedule_name: e.target.value })
+                      }
+                    />
+                  </div>
+                  <div className="grid gap-3 sm:grid-cols-3">
+                    <div>
+                      <label className="text-xs text-mist block mb-1">Peak ($/kWh)</label>
+                      <input
+                        type="number"
+                        step={0.001}
+                        min={0}
+                        className="input-dark w-full"
+                        placeholder="0.00"
+                        value={form.tou_peak_rate || ""}
+                        onChange={(e) =>
+                          setForm({
+                            ...form,
+                            tou_peak_rate: parseFloat(e.target.value) || 0,
+                          })
+                        }
+                      />
+                    </div>
+                    <div>
+                      <label className="text-xs text-mist block mb-1">Off peak ($/kWh)</label>
+                      <input
+                        type="number"
+                        step={0.001}
+                        min={0}
+                        className="input-dark w-full"
+                        placeholder="0.00"
+                        value={form.tou_off_peak_rate || ""}
+                        onChange={(e) =>
+                          setForm({
+                            ...form,
+                            tou_off_peak_rate: parseFloat(e.target.value) || 0,
+                          })
+                        }
+                      />
+                    </div>
+                    <div>
+                      <label className="text-xs text-mist block mb-1">Super off peak ($/kWh)</label>
+                      <input
+                        type="number"
+                        step={0.001}
+                        min={0}
+                        className="input-dark w-full"
+                        placeholder="0.00"
+                        value={form.tou_super_off_peak_rate || ""}
+                        onChange={(e) =>
+                          setForm({
+                            ...form,
+                            tou_super_off_peak_rate: parseFloat(e.target.value) || 0,
+                          })
+                        }
+                      />
+                    </div>
+                  </div>
+                </div>
+                <TouRateReference
+                  config={{
+                    scheduleName: form.rate_schedule_name,
+                    peakRate: form.tou_peak_rate,
+                    offPeakRate: form.tou_off_peak_rate,
+                    superOffPeakRate: form.tou_super_off_peak_rate,
+                  }}
+                  importRate={form.electricity_import_rate}
+                  onApplyAverage={(rate) =>
+                    setForm((prev) => ({
+                      ...prev,
+                      electricity_import_rate: rate,
+                      ...(usesRetailExportCredit(prev.nem_plan)
+                        ? { electricity_export_rate: rate }
+                        : {}),
+                    }))
+                  }
+                />
                 <div>
                   <label className="text-xs text-mist block mb-1">
                     Temp coefficient (%/°C, negative)

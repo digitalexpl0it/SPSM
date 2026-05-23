@@ -53,6 +53,10 @@ class SettingsUpdate(BaseModel):
     electricity_import_rate: float | None = Field(None, ge=0, le=10)
     electricity_export_rate: float | None = Field(None, ge=0, le=10)
     nem_plan: str | None = Field(None, pattern="^(nem1|nem2|nem3|custom)$")
+    rate_schedule_name: str | None = Field(None, max_length=128)
+    tou_peak_rate: float | None = Field(None, ge=0, le=10)
+    tou_off_peak_rate: float | None = Field(None, ge=0, le=10)
+    tou_super_off_peak_rate: float | None = Field(None, ge=0, le=10)
     temp_coefficient_pct_per_c: float | None = Field(None, ge=-1, le=0)
     derating_display_enabled: bool | None = None
     notify_quiet_hours_enabled: bool | None = None
@@ -164,6 +168,9 @@ async def update_settings(
             "temp_coefficient_pct_per_c",
             "electricity_import_rate",
             "electricity_export_rate",
+            "tou_peak_rate",
+            "tou_off_peak_rate",
+            "tou_super_off_peak_rate",
         ):
             await set_setting(db, key, str(value))
         elif key == "notify_smtp_port":

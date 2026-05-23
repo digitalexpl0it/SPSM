@@ -43,7 +43,7 @@ export function nemPlanSavingsNote(plan: NemPlan | undefined): string | null {
   switch (plan) {
     case "nem1":
     case "nem2":
-      return "Under legacy NEM, exported kWh are credited at your retail import rate (1:1 net metering). This is a simplified period estimate — your utility bill may also include fixed charges, TOU tiers, and an annual true-up.";
+      return "Under legacy NEM, exported kWh are credited at the same TOU rate as imports (1:1 net metering). SPSM uses one blended $/kWh for estimates. Optional TOU rates in Settings are reference only. Fixed monthly charges and annual true-up are not included.";
     case "nem3":
       return "Under NEM 3.0 (Solar Billing Plan), export compensation is much lower than retail. Set your export rate to the ACC / avoided-cost value from your utility — not your import rate.";
     case "custom":
