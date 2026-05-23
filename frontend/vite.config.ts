@@ -6,6 +6,8 @@ export default defineConfig({
   server: {
     host: true,
     port: 5173,
+    // Allow LAN access via IP, mDNS, or /etc/hosts names (e.g. http://panda:5173).
+    allowedHosts: true,
     proxy: {
       "/api": { target: "http://api:8000", changeOrigin: true },
       "/docs": { target: "http://api:8000", changeOrigin: true },
