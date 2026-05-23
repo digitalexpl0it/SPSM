@@ -4,7 +4,8 @@ from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.auth import get_current_user
+from app.auth import get_current_user, require_admin, require_write_access
+from app.network_discovery import scan_pvs_subnet
 from app.database import get_db
 from app.models import User
 from app.monthly_report import send_monthly_report_now
@@ -49,8 +50,34 @@ class SettingsUpdate(BaseModel):
     portal_public_url: str | None = None
     monthly_report_enabled: bool | None = None
     co2_kg_per_kwh: float | None = Field(None, ge=0, le=2)
+    electricity_import_rate: float | None = Field(None, ge=0, le=10)
+    electricity_export_rate: float | None = Field(None, ge=0, le=10)
+    nem_plan: str | None = Field(None, pattern="^(nem1|nem2|nem3|custom)$")
     temp_coefficient_pct_per_c: float | None = Field(None, ge=-1, le=0)
+    derating_display_enabled: bool | None = None
+    notify_quiet_hours_enabled: bool | None = None
+    notify_quiet_start: str | None = Field(None, max_length=8)
+    notify_quiet_end: str | None = Field(None, max_length=8)
+    notify_quiet_allow_critical: bool | None = None
+    health_sunrise_ramp_smart: bool | None = None
     setup_complete: bool | None = None
+
+
+class TestNotifyRequest(BaseModel):
+    notify_enabled: bool | None = None
+    notify_webhook_enabled: bool | None = None
+    notify_ntfy_enabled: bool | None = None
+    notify_smtp_enabled: bool | None = None
+    notify_webhook_url: str | None = None
+    notify_ntfy_topic: str | None = None
+    notify_min_severity: str | None = Field(None, pattern="^(warning|critical)$")
+    notify_smtp_host: str | None = None
+    notify_smtp_port: int | None = Field(None, ge=1, le=65535)
+    notify_smtp_use_tls: bool | None = None
+    notify_smtp_username: str | None = None
+    notify_smtp_password: str | None = None
+    notify_smtp_from: str | None = None
+    notify_smtp_to: str | None = None
 
 
 class TestConnectionRequest(BaseModel):
@@ -72,7 +99,7 @@ async def get_settings(
 @router.put("")
 async def update_settings(
     body: SettingsUpdate,
-    _: Annotated[User, Depends(get_current_user)],
+    _: Annotated[User, Depends(require_write_access)],
     db: Annotated[AsyncSession, Depends(get_db)],
 ):
     mapping: dict[str, Any] = body.model_dump(exclude_none=True)
@@ -86,7 +113,11 @@ async def update_settings(
         "notify_ntfy_enabled",
         "notify_smtp_enabled",
         "notify_smtp_use_tls",
+        "notify_quiet_hours_enabled",
+        "notify_quiet_allow_critical",
         "monthly_report_enabled",
+        "derating_display_enabled",
+        "health_sunrise_ramp_smart",
         "setup_complete",
     }
 
@@ -123,7 +154,17 @@ async def update_settings(
         elif key == "site_timezone":
             tz = (str(value).strip() if value else "") or DEFAULT_TIMEZONE
             await set_setting(db, key, tz)
-        elif key in ("co2_kg_per_kwh", "temp_coefficient_pct_per_c"):
+        elif key == "nem_plan":
+            plan = (str(value).strip().lower() if value else "") or "nem2"
+            await set_setting(
+                db, key, plan if plan in ("nem1", "nem2", "nem3", "custom") else "custom"
+            )
+        elif key in (
+            "co2_kg_per_kwh",
+            "temp_coefficient_pct_per_c",
+            "electricity_import_rate",
+            "electricity_export_rate",
+        ):
             await set_setting(db, key, str(value))
         elif key == "notify_smtp_port":
             await set_setting(db, key, str(int(value)) if value is not None else "587")
@@ -155,12 +196,40 @@ async def test_pvs(
     return {"ok": True, "message": message, "data": data}
 
 
+def _merge_notify_settings(
+    base: dict[str, str], overrides: dict[str, Any]
+) -> dict[str, str]:
+    merged = dict(base)
+    bool_keys = {
+        "notify_enabled",
+        "notify_webhook_enabled",
+        "notify_ntfy_enabled",
+        "notify_smtp_enabled",
+        "notify_smtp_use_tls",
+    }
+    for key, value in overrides.items():
+        if value is None:
+            continue
+        if key in bool_keys:
+            merged[key] = "true" if value else "false"
+        elif key == "notify_smtp_port":
+            merged[key] = str(int(value))
+        else:
+            merged[key] = str(value)
+    return merged
+
+
 @router.post("/test-notify")
 async def test_notify(
     _: Annotated[User, Depends(get_current_user)],
     db: Annotated[AsyncSession, Depends(get_db)],
+    body: TestNotifyRequest | None = None,
 ):
     settings = await get_all_settings(db)
+    if body is not None:
+        settings = _merge_notify_settings(
+            settings, body.model_dump(exclude_none=True)
+        )
     block = explain_notification_block(settings, is_test=True)
     if block:
         raise HTTPException(status_code=400, detail=block)
@@ -193,3 +262,19 @@ async def test_monthly_report(
     if not ok:
         raise HTTPException(status_code=400, detail=message)
     return {"ok": True, "message": message}
+
+
+@router.post("/discover-pvs")
+async def discover_pvs(
+    _: Annotated[User, Depends(require_admin)],
+    db: Annotated[AsyncSession, Depends(get_db)],
+):
+    settings = await get_all_settings(db)
+    host = (settings.get("pvs_host") or "").strip()
+    if not host:
+        raise HTTPException(
+            status_code=400,
+            detail="Set a PVS host IP in settings first (used as the /24 scan seed).",
+        )
+    hosts = await scan_pvs_subnet(host)
+    return {"ok": True, "seed_host": host, "hosts": hosts}

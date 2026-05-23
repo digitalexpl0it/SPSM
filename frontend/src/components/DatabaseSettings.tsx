@@ -3,6 +3,7 @@ import { Database, Loader2, Trash2 } from "lucide-react";
 import { databaseApi, type DatabaseStats } from "../lib/api";
 import { useAuth } from "../lib/auth";
 import { formatErrorMessage, useToast } from "../lib/toast";
+import { SnapshotExportPanel } from "./SnapshotExportPanel";
 import { Toggle } from "./Toggle";
 
 function formatBytes(n: number | null | undefined): string {
@@ -250,6 +251,8 @@ export function DatabaseSettings() {
           </p>
         )}
       </section>
+
+      <SnapshotExportPanel />
     </div>
   );
 }

@@ -1,9 +1,11 @@
 import { useCallback, useEffect, useState, type ReactNode } from "react";
 import type { LucideIcon } from "lucide-react";
-import { Activity, Cpu, Gauge, Loader2, RefreshCw, Sun, Thermometer, Zap } from "lucide-react";
+import { Activity, ChevronDown, Cpu, Gauge, Loader2, RefreshCw, Sun, Thermometer, Zap } from "lucide-react";
+import { InverterMiniChart } from "../components/InverterMiniChart";
 import { InverterPowerGauge } from "../components/InverterPowerGauge";
 import { SolarThrobber } from "../components/SolarThrobber";
 import { dataApi } from "../lib/api";
+import { expectedDeratedKw } from "../lib/derating";
 import { formatChartDateTime } from "../lib/formatChartDateTime";
 import { inverterGaugeMaxW } from "../lib/inverterGaugeMax";
 import { getSiteTimezone, loadSiteSettings } from "../lib/siteSettings";
@@ -81,6 +83,14 @@ export function InvertersPage() {
   const [dataSource, setDataSource] = useState<"cached" | "live">("cached");
   const [refreshError, setRefreshError] = useState<string | null>(null);
   const [siteTz, setSiteTz] = useState<string | undefined>();
+  const [expandedSerial, setExpandedSerial] = useState<string | null>(null);
+  const [chartRange, setChartRange] = useState<"day" | "week" | "month">("day");
+  const [chartData, setChartData] = useState<
+    Record<string, Awaited<ReturnType<typeof dataApi.inverterSeries>>>
+  >({});
+  const [chartLoading, setChartLoading] = useState<string | null>(null);
+  const [deratingEnabled, setDeratingEnabled] = useState(false);
+  const [tempCoeff, setTempCoeff] = useState(-0.3);
 
   const applyPayload = useCallback(
     (
@@ -104,6 +114,9 @@ export function InvertersPage() {
     const w = parseInt(settings.inverter_gauge_max_w || "", 10);
     setGaugeMaxOverride(!Number.isNaN(w) && w > 0 ? w : null);
     setTempSettings(parseTempSettings(settings));
+    setDeratingEnabled(settings.derating_display_enabled === "true");
+    const coeff = parseFloat(settings.temp_coefficient_pct_per_c || "-0.30");
+    setTempCoeff(Number.isFinite(coeff) ? coeff : -0.3);
     const snap = snaps[0];
     applyPayload(snap?.payload as Record<string, unknown>, snap?.ts ?? null, "cached");
     setConnected(isSnapshotRecent(snap?.ts ?? null));
@@ -138,6 +151,44 @@ export function InvertersPage() {
 
   const resolveGaugeMax = (prodMdlNm?: string) =>
     inverterGaugeMaxW(prodMdlNm, gaugeMaxOverride);
+
+  const toggleChart = async (serial: string) => {
+    if (expandedSerial === serial) {
+      setExpandedSerial(null);
+      return;
+    }
+    setExpandedSerial(serial);
+    if (chartData[serial]?.range === chartRange) return;
+    setChartLoading(serial);
+    try {
+      const res = await dataApi.inverterSeries(serial, chartRange);
+      setChartData((prev) => ({ ...prev, [serial]: res }));
+    } catch {
+      setChartData((prev) => ({
+        ...prev,
+        [serial]: { serial, range: chartRange, since: "", points: [] },
+      }));
+    } finally {
+      setChartLoading(null);
+    }
+  };
+
+  useEffect(() => {
+    if (!expandedSerial) return;
+    let cancelled = false;
+    setChartLoading(expandedSerial);
+    dataApi
+      .inverterSeries(expandedSerial, chartRange)
+      .then((res) => {
+        if (!cancelled) setChartData((prev) => ({ ...prev, [expandedSerial]: res }));
+      })
+      .finally(() => {
+        if (!cancelled) setChartLoading(null);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [expandedSerial, chartRange]);
 
   if (loading) return <SolarThrobber label="Loading inverters…" />;
 
@@ -215,6 +266,13 @@ export function InvertersPage() {
               const temp = num(inv.tHtsnkDegc);
               const volts = num(inv.vMppt1V);
               const lifetime = num(inv.ltea3phsumKwh);
+              const serial = panelLabel(path, inv);
+              const ratedKw = resolveGaugeMax(inv.prodMdlNm) / 1000;
+              const expected =
+                deratingEnabled && active
+                  ? expectedDeratedKw(ratedKw, temp, tempCoeff)
+                  : null;
+              const expanded = expandedSerial === serial;
 
               return (
                 <div
@@ -270,6 +328,24 @@ export function InvertersPage() {
                     </Pill>
                   </div>
 
+                  {expected != null && kw != null && (
+                    <p className="relative z-[1] mt-2 text-xs text-mist">
+                      Expected ~{expected.toFixed(2)} kW · actual {kw.toFixed(2)} kW
+                      {expected > 0.01 && (
+                        <span
+                          className={
+                            kw >= expected * 0.9
+                              ? " text-emerald-400/90"
+                              : " text-amber-300/90"
+                          }
+                        >
+                          {" "}
+                          ({Math.round((kw / expected) * 100)}%)
+                        </span>
+                      )}
+                    </p>
+                  )}
+
                   {inv.prodMdlNm && (
                     <Pill
                       icon={Activity}
@@ -278,6 +354,47 @@ export function InvertersPage() {
                     >
                       {inv.prodMdlNm}
                     </Pill>
+                  )}
+
+                  <button
+                    type="button"
+                    onClick={() => toggleChart(serial)}
+                    className="relative z-[1] mt-3 flex items-center gap-1 text-xs text-cyan-glow hover:underline"
+                  >
+                    <ChevronDown
+                      className={`w-4 h-4 transition ${expanded ? "rotate-180" : ""}`}
+                    />
+                    {expanded ? "Hide history" : "Show history"}
+                  </button>
+
+                  {expanded && (
+                    <div className="relative z-[1] w-full mt-2 text-left">
+                      <div className="flex gap-1 mb-2">
+                        {(["day", "week", "month"] as const).map((r) => (
+                          <button
+                            key={r}
+                            type="button"
+                            onClick={() => setChartRange(r)}
+                            className={`px-2 py-0.5 rounded text-xs capitalize ${
+                              chartRange === r
+                                ? "bg-cyan/20 text-cyan-glow border border-cyan/40"
+                                : "text-mist border border-surface"
+                            }`}
+                          >
+                            {r}
+                          </button>
+                        ))}
+                      </div>
+                      {chartLoading === serial ? (
+                        <p className="text-xs text-mist text-center py-4">Loading chart…</p>
+                      ) : (
+                        <InverterMiniChart
+                          data={chartData[serial]?.points ?? []}
+                          range={chartRange}
+                          siteTz={siteTz}
+                        />
+                      )}
+                    </div>
                   )}
                 </div>
               );

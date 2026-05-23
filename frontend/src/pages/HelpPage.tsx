@@ -46,6 +46,7 @@ function Sub({ title, children }: { title: string; children: React.ReactNode }) 
 }
 
 const TOC = [
+  { id: "mobile", label: "Mobile navigation" },
   { id: "start", label: "Getting started" },
   { id: "dashboard", label: "Dashboard" },
   { id: "inverters", label: "Inverters" },
@@ -88,6 +89,28 @@ export function HelpPage() {
           ))}
         </ul>
       </nav>
+
+      <Section id="mobile" title="Mobile navigation" icon={Home}>
+        <p>
+          On phones and small tablets, SPSM uses a <strong className="text-cyan-glow/90">bottom tab bar</strong>{" "}
+          instead of the desktop sidebar:
+        </p>
+        <ul className="list-disc list-inside space-y-1">
+          <li>
+            <strong>Dashboard</strong>, <strong>Inverters</strong>, <strong>Reports</strong>, and{" "}
+            <strong>Health</strong> — primary tabs.
+          </li>
+          <li>
+            <strong>More</strong> — System, Settings, Help, and Sign out.
+          </li>
+        </ul>
+        <p>
+          Open the portal at{" "}
+          <span className="mono text-cyan-glow/80">http://&lt;server-lan-ip&gt;:5173</span> from
+          your phone (not <span className="mono">localhost</span>). Content has extra bottom padding
+          so the tab bar does not cover charts or buttons.
+        </p>
+      </Section>
 
       <Section id="start" title="Getting started" icon={Home}>
         <p>
@@ -167,6 +190,14 @@ export function HelpPage() {
             → System.
           </li>
           <li>
+            <strong className="text-cyan-glow/90">Show history</strong> — expand a panel for a
+            day/week/month power chart from stored snapshots.
+          </li>
+          <li>
+            <strong className="text-cyan-glow/90">Derating estimate</strong> — optional expected vs
+            actual power when enabled under Settings → System (uses heatsink temp and coefficient).
+          </li>
+          <li>
             <strong className="text-cyan-glow/90">Refresh from PVS</strong> — forces a new pull
             instead of only showing cached snapshot data; stale data is indicated when the snapshot
             is old.
@@ -185,12 +216,21 @@ export function HelpPage() {
         </p>
         <ul className="list-disc list-inside space-y-1">
           <li>
-            <strong className="text-cyan-glow/90">Range buttons</strong> — 7, 30, or 90 days of
-            daily PV, load, grid import, and export.
+            <strong className="text-cyan-glow/90">Range buttons</strong> — 7, 30, or 90 days (URL
+            deep link: <span className="mono">/reports?days=30</span>).
           </li>
           <li>
             <strong className="text-cyan-glow/90">Summary cards</strong> — period totals and
             estimated CO₂ offset (factor from Settings).
+          </li>
+          <li>
+            <strong className="text-cyan-glow/90">Estimated savings</strong> — uses your net
+            billing plan (NEM 1.0/2.0 retail credit vs NEM 3.0 lower export rate) and $/kWh rates
+            from Settings → System.
+          </li>
+          <li>
+            <strong className="text-cyan-glow/90">Top producers</strong> — ranked panel energy for
+            the selected period (from stored inverter snapshots).
           </li>
           <li>
             <strong className="text-cyan-glow/90">Chart</strong> — daily bars for solar, load,
@@ -227,12 +267,17 @@ export function HelpPage() {
           </li>
           <li>
             <strong className="text-cyan-glow/90">History</strong> — past alert transitions stored in
-            the database (subject to data retention if enabled).
+            the database (subject to data retention if enabled). Open directly with{" "}
+            <span className="mono">/health?history=1</span>.
+          </li>
+          <li>
+            <strong className="text-cyan-glow/90">Acknowledge</strong> — pause repeat notifications
+            for an active alert until it resolves (write access required).
           </li>
           <li>
             <strong className="text-cyan-glow/90">Notifications</strong> — new warning/critical events
             can push to webhook, ntfy, or email when configured under Settings → Notifications
-            (debounced so you are not spammed).
+            (debounced; optional quiet hours).
           </li>
         </ul>
         <p>
@@ -252,10 +297,17 @@ export function HelpPage() {
 
       <Section id="settings" title="Settings overview" icon={Settings}>
         <p>
-          Settings are organized into tabs. Most changes apply after you click{" "}
-          <strong className="text-cyan-glow/90">Save settings</strong> on that tab (or the dedicated
-          save button on Database retention). Tests (PVS, notifications) use{" "}
-          <strong className="text-cyan-glow/90">saved</strong> values, not unsaved form fields.
+          Settings are organized into tabs. Deep links work:{" "}
+          <span className="mono text-cyan-glow/80">/settings?tab=notifications</span>,{" "}
+          <span className="mono">?tab=health</span>, <span className="mono">?tab=accounts</span>, etc.
+          Most changes apply after you click <strong className="text-cyan-glow/90">Save settings</strong>{" "}
+          on that tab (or the dedicated save button on Database / Health rules). Read-only accounts
+          can view but not save.
+        </p>
+        <p>
+          <strong className="text-cyan-glow/90">Test alert email</strong> on the Notifications tab
+          uses the current form values — you do not need to save first. Monthly report test still
+          uses saved SMTP settings.
         </p>
         <p>
           The background <strong className="text-cyan-glow/90">collector</strong> reads settings
@@ -323,7 +375,23 @@ export function HelpPage() {
             </ul>
           </Sub>
           <Sub title="Analytics">
-            <p>CO₂ factor (kg per kWh) for reports and optional derating coefficient for estimates.</p>
+            <p>
+              CO₂ factor (kg per kWh), net billing plan (NEM 1.0/2.0/3.0 or custom), electricity
+              import/export rates ($/kWh) for savings on Reports, temperature coefficient, and
+              optional derating display on Inverters.
+            </p>
+          </Sub>
+          <Sub title="Debug tab (admin)">
+            <ul className="list-disc list-inside space-y-1">
+              <li>
+                <strong>Scan local subnet</strong> — on the System tab, in the PVS connection card
+                (manual; may take a minute).
+              </li>
+              <li>
+                <strong>Varserver explorer</strong> — live key/value read from the PVS with filter
+                and copy.
+              </li>
+            </ul>
           </Sub>
         </div>
       </section>
@@ -359,8 +427,12 @@ export function HelpPage() {
                 or above the level you pick.
               </li>
               <li>
-                <strong>Send test alert email</strong> — sample Warning + Critical layout; save
-                first.
+                <strong>Quiet hours</strong> — pause delivery during a daily window (site timezone);
+                critical alerts can still be allowed.
+              </li>
+              <li>
+                <strong>Send test alert email</strong> — uses the values on this page (no save
+                required).
               </li>
             </ul>
           </Sub>
@@ -395,6 +467,10 @@ export function HelpPage() {
               stale reading gap.
             </li>
             <li>
+              <strong>Smart sunrise ramp</strong> — optional season-aware morning ramp for the
+              daylight zero-PV check (off = fixed 3-hour ramp after 6 AM local).
+            </li>
+            <li>
               Temperature alerts use thresholds from the System tab; turn the temperature rule off
               here if you only want other checks.
             </li>
@@ -419,6 +495,14 @@ export function HelpPage() {
           </p>
           <ul className="list-disc list-inside space-y-1">
             <li>At least one admin must remain; you cannot delete your own account or the only admin.</li>
+            <li>
+              <strong>Read-only users</strong> — can view dashboards but cannot save settings or
+              run write actions.
+            </li>
+            <li>
+              <strong>API tokens</strong> — create revocable <span className="mono">spsm_…</span>{" "}
+              tokens for scripts and integrations (Bearer auth on API requests).
+            </li>
             <li>Use strong passwords on any install exposed beyond your LAN.</li>
           </ul>
         </div>
@@ -487,14 +571,26 @@ export function HelpPage() {
               later.
             </p>
           </Sub>
+          <Sub title="Snapshot export">
+            <p>
+              Download stored device snapshots (inverters, system, meters) as JSON or CSV for a
+              chosen number of days — useful for offline analysis or support.
+            </p>
+          </Sub>
         </div>
       </section>
 
       <Section id="tips" title="Tips & troubleshooting" icon={CircleHelp}>
         <ul className="list-disc list-inside space-y-2">
           <li>
-            <strong className="text-cyan-glow/90">Mobile / tablet</strong> — open{" "}
+            <strong className="text-cyan-glow/90">Mobile / tablet</strong> — use the bottom tab bar;
+            open{" "}
             <span className="mono">http://&lt;server-lan-ip&gt;:5173</span>, not localhost.
+          </li>
+          <li>
+            <strong className="text-cyan-glow/90">Settings deep links</strong> —{" "}
+            <span className="mono">/settings?tab=notifications</span>,{" "}
+            <span className="mono">?tab=health</span>, etc.
           </li>
           <li>
             <strong className="text-cyan-glow/90">Blank reports</strong> — collector needs time to

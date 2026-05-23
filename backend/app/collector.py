@@ -11,6 +11,7 @@ from sqlalchemy import select
 
 from app.database import async_session, engine
 from app.database import Base
+from app.schema_upgrade import run_schema_upgrades
 from app.models import DeviceSnapshot, Reading
 from app.pvs_client import PvsClient, parse_livedata
 from app.data_retention import maybe_auto_purge
@@ -31,6 +32,7 @@ logger = logging.getLogger("collector")
 async def init_db():
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
+        await run_schema_upgrades(conn)
 
 
 async def collect_once() -> None:

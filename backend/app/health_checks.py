@@ -205,7 +205,7 @@ async def evaluate_site_health(
         rule_enabled_by_id(settings, "daylight_zero_pv")
         and _is_daylight(now, settings)
         and recent_rows
-        and not is_sunrise_ramp_local(tz_name, now)
+        and not is_sunrise_ramp_local(tz_name, now, settings)
     ):
         window_start = now - timedelta(minutes=zero_pv_minutes)
         window_rows = [r for r in recent_rows if (r.ts if r.ts.tzinfo else r.ts.replace(tzinfo=UTC)) >= window_start]

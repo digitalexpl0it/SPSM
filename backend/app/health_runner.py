@@ -41,7 +41,8 @@ async def run_health_with_persistence(db: AsyncSession) -> dict:
             existing.title = alert.title
             existing.message = alert.message
             existing.detail = alert.detail or ""
-            if should_notify(existing.last_notified_at):
+            acked = existing.acknowledged_at is not None
+            if should_notify(existing.last_notified_at) and not acked:
                 if await send_notification(
                     settings,
                     title=alert.title,
@@ -72,7 +73,8 @@ async def run_health_with_persistence(db: AsyncSession) -> dict:
                 prior_ev.message = alert.message
                 prior_ev.detail = alert.detail or ""
                 open_events.append(prior_ev)
-                if should_notify(prior_ev.last_notified_at):
+                acked = prior_ev.acknowledged_at is not None
+                if should_notify(prior_ev.last_notified_at) and not acked:
                     if await send_notification(
                         settings,
                         title=alert.title,

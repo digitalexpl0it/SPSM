@@ -220,4 +220,5 @@ def default_health_rule_keys() -> dict[str, str]:
     keys["health_daylight_zero_pv_kw"] = "0.05"
     keys["health_production_drop_ratio_pct"] = "45"
     keys["health_no_data_gap_minutes"] = "0"
+    keys["health_sunrise_ramp_smart"] = "false"
     return keys

@@ -8,6 +8,9 @@ export default defineConfig({
     port: 5173,
     proxy: {
       "/api": { target: "http://api:8000", changeOrigin: true },
+      "/docs": { target: "http://api:8000", changeOrigin: true },
+      "/redoc": { target: "http://api:8000", changeOrigin: true },
+      "/openapi.json": { target: "http://api:8000", changeOrigin: true },
     },
   },
 });

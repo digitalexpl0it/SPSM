@@ -4,7 +4,7 @@ import { Pvs6Unit } from "../components/Pvs6Unit";
 import { SolarThrobber } from "../components/SolarThrobber";
 import { dataApi, settingsApi } from "../lib/api";
 import { formatChartDateTime } from "../lib/formatChartDateTime";
-import { getSiteTimezone, loadSiteSettings } from "../lib/siteSettings";
+import { getSiteTimezone } from "../lib/siteSettings";
 import { isSnapshotRecent } from "../lib/snapshotStale";
 
 const LABELS: Record<string, string> = {

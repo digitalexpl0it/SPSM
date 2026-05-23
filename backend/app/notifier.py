@@ -672,6 +672,39 @@ def _active_channels(settings: dict[str, str]) -> list[str]:
     return channels
 
 
+def _parse_hhmm(raw: str) -> tuple[int, int] | None:
+    text = (raw or "").strip()
+    if not text or ":" not in text:
+        return None
+    parts = text.split(":", 1)
+    try:
+        h, m = int(parts[0]), int(parts[1])
+    except ValueError:
+        return None
+    if 0 <= h <= 23 and 0 <= m <= 59:
+        return h, m
+    return None
+
+
+def _in_quiet_hours(settings: dict[str, str], *, severity: str) -> bool:
+    if settings.get("notify_quiet_hours_enabled", "false").lower() != "true":
+        return False
+    if severity == "critical" and settings.get("notify_quiet_allow_critical", "true").lower() == "true":
+        return False
+    start = _parse_hhmm(settings.get("notify_quiet_start", "22:00"))
+    end = _parse_hhmm(settings.get("notify_quiet_end", "07:00"))
+    if start is None or end is None:
+        return False
+    tz = resolve_timezone(site_timezone_from_settings(settings))
+    now_local = datetime.now(UTC).astimezone(tz)
+    minutes = now_local.hour * 60 + now_local.minute
+    start_m = start[0] * 60 + start[1]
+    end_m = end[0] * 60 + end[1]
+    if start_m <= end_m:
+        return start_m <= minutes < end_m
+    return minutes >= start_m or minutes < end_m
+
+
 def explain_notification_block(settings: dict[str, str], *, is_test: bool = False) -> str | None:
     """Human-readable reason notifications would not send, or None if they may send."""
     if settings.get("notify_enabled", "false").lower() != "true":
@@ -687,6 +720,12 @@ def explain_notification_block(settings: dict[str, str], *, is_test: bool = Fals
     return None
 
 
+def quiet_hours_block(settings: dict[str, str], *, severity: str, is_test: bool) -> str | None:
+    if is_test or not _in_quiet_hours(settings, severity=severity):
+        return None
+    return "Notifications are paused during quiet hours."
+
+
 async def send_notification(
     settings: dict[str, str],
     *,
@@ -698,6 +737,8 @@ async def send_notification(
     is_test: bool = False,
 ) -> bool:
     if settings.get("notify_enabled", "false").lower() != "true":
+        return False
+    if _in_quiet_hours(settings, severity=severity) and not is_test:
         return False
     minimum = settings.get("notify_min_severity", "critical")
     if not is_test and not _meets_min_severity(severity, minimum):

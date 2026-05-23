@@ -1,11 +1,16 @@
 import { useCallback, useEffect, useState } from "react";
-import { BarChart3, Download, Home, Leaf, Loader2, PlugZap, Sun } from "lucide-react";
-import { Link } from "react-router-dom";
+import { BarChart3, Download, Home, Leaf, Loader2, PlugZap, Sun, Trophy } from "lucide-react";
+import { Link, useSearchParams } from "react-router-dom";
+import { EstimatedSavingsCard } from "../components/EstimatedSavingsCard";
 import { ReportsEnergyChart } from "../components/ReportsEnergyChart";
 import { ReportsPeriodComparison } from "../components/ReportsPeriodComparison";
 import { StatCard } from "../components/StatCard";
 import { SolarThrobber } from "../components/SolarThrobber";
-import { reportsApi, type DailyReportResponse } from "../lib/api";
+import {
+  reportsApi,
+  type DailyReportResponse,
+  type InverterLeaderboardItem,
+} from "../lib/api";
 import { getSiteTimezone, loadSiteSettings } from "../lib/siteSettings";
 import { formatErrorMessage } from "../lib/toast";
 
@@ -15,8 +20,21 @@ const RANGES = [
   { days: 90, label: "90 days" },
 ] as const;
 
+const VALID_DAYS = [7, 30, 90] as const;
+
 export function ReportsPage() {
-  const [days, setDays] = useState(7);
+  const [searchParams, setSearchParams] = useSearchParams();
+  const daysFromUrl = parseInt(searchParams.get("days") || "7", 10);
+  const initialDays = VALID_DAYS.includes(daysFromUrl as (typeof VALID_DAYS)[number])
+    ? daysFromUrl
+    : 7;
+  const [days, setDays] = useState(initialDays);
+
+  useEffect(() => {
+    const fromUrl = parseInt(searchParams.get("days") || "7", 10);
+    const next = VALID_DAYS.includes(fromUrl as (typeof VALID_DAYS)[number]) ? fromUrl : 7;
+    setDays((d) => (d === next ? d : next));
+  }, [searchParams]);
   const [data, setData] = useState<DailyReportResponse | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
@@ -24,6 +42,12 @@ export function ReportsPage() {
   const [rank, setRank] = useState<
     { path: string; serial: string; kw: number; temp: number | null }[]
   >([]);
+  const [leaderboard, setLeaderboard] = useState<InverterLeaderboardItem[]>([]);
+
+  const setDaysAndUrl = (d: number) => {
+    setDays(d);
+    setSearchParams({ days: String(d) }, { replace: true });
+  };
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -38,6 +62,12 @@ export function ReportsPage() {
         setRank(rankRes.items.slice(0, 5));
       } catch {
         setRank([]);
+      }
+      try {
+        const lb = await reportsApi.inverterLeaderboard(days);
+        setLeaderboard(lb.items.filter((i) => i.energy_kwh != null).slice(0, 10));
+      } catch {
+        setLeaderboard([]);
       }
     } catch (e) {
       setData(null);
@@ -93,7 +123,7 @@ export function ReportsPage() {
             <button
               key={r.days}
               type="button"
-              onClick={() => setDays(r.days)}
+              onClick={() => setDaysAndUrl(r.days)}
               className={`px-3 py-1.5 rounded-lg text-sm border transition ${
                 days === r.days
                   ? "border-cyan/50 bg-cyan/15 text-cyan-glow"
@@ -142,7 +172,16 @@ export function ReportsPage() {
 
       {!error && data && (
         <>
-          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-2 xl:grid-cols-4">
+          {data.savings && (
+            <EstimatedSavingsCard
+              savings={data.savings}
+              totals={data.totals}
+              periodStart={data.period.start}
+              periodEnd={data.period.end}
+            />
+          )}
+
+          <div className="grid gap-4 grid-cols-2 lg:grid-cols-4">
             <StatCard
               icon={Sun}
               label="Solar produced"
@@ -186,7 +225,7 @@ export function ReportsPage() {
           <ReportsEnergyChart data={chartData} />
 
           <div className="card-glow overflow-hidden">
-            <table className="table-zebra">
+            <table className="table-zebra hidden md:table">
               <thead>
                 <tr>
                   <th>Date</th>
@@ -210,7 +249,38 @@ export function ReportsPage() {
                 ))}
               </tbody>
             </table>
+            <div className="md:hidden divide-y divide-surface/80 max-h-[24rem] overflow-y-auto">
+              {[...data.days].reverse().map((d) => (
+                <div key={d.date} className="p-3 text-sm space-y-1">
+                  <p className="mono text-cyan-glow/90 font-medium">{d.date}</p>
+                  <p className="text-mist">
+                    PV {d.pv_kwh} · Load {d.load_kwh} · Imp {d.import_kwh} · Exp {d.export_kwh}
+                  </p>
+                  <p className="text-xs text-mist">
+                    Self-use {d.self_consumption_pct != null ? `${d.self_consumption_pct}%` : "—"}
+                  </p>
+                </div>
+              ))}
+            </div>
           </div>
+
+          {leaderboard.length > 0 && (
+            <div className="card-glow p-4">
+              <h2 className="text-sm font-medium text-mist mb-2 flex items-center gap-2">
+                <Trophy className="w-4 h-4 text-amber-400" />
+                Top producers ({days} days)
+              </h2>
+              <ul className="text-sm space-y-1">
+                {leaderboard.map((r, i) => (
+                  <li key={r.serial} className="flex justify-between gap-4">
+                    <span className="text-mist shrink-0 w-6">{i + 1}.</span>
+                    <span className="mono text-cyan-glow/80 truncate flex-1">{r.serial}</span>
+                    <span className="text-mist shrink-0">{r.energy_kwh} kWh</span>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
 
           {rank.length > 0 && (
             <div className="card-glow p-4">

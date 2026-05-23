@@ -12,6 +12,7 @@ interface AuthState {
   token: string | null;
   username: string | null;
   isAdmin: boolean;
+  isReadonly: boolean;
   setupRequired: boolean;
   loading: boolean;
   hasUser: boolean;
@@ -27,18 +28,29 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [token, setToken] = useState<string | null>(() => localStorage.getItem("token"));
   const [username, setUsername] = useState<string | null>(null);
   const [isAdmin, setIsAdmin] = useState(false);
+  const [isReadonly, setIsReadonly] = useState(false);
   const [setupRequired, setSetupRequired] = useState(false);
   const [loading, setLoading] = useState(true);
   const [hasUser, setHasUser] = useState(false);
 
   const refreshStatus = useCallback(async () => {
+    const timeoutMs = 12_000;
+    const withTimeout = <T,>(p: Promise<T>) =>
+      Promise.race([
+        p,
+        new Promise<never>((_, reject) =>
+          setTimeout(() => reject(new Error("Auth check timed out")), timeoutMs)
+        ),
+      ]);
+
     try {
-      const s = await authApi.status();
+      const s = await withTimeout(authApi.status());
       setHasUser(s.has_user);
       if (token) {
-        const me = await authApi.me();
+        const me = await withTimeout(authApi.me());
         setUsername(me.username);
         setIsAdmin(me.is_admin);
+        setIsReadonly(me.is_readonly ?? false);
         setSetupRequired(!s.setup_complete);
       }
     } catch {
@@ -81,6 +93,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     localStorage.removeItem("token");
     setToken(null);
     setUsername(null);
+    setIsReadonly(false);
   };
 
   return (
@@ -89,6 +102,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         token,
         username,
         isAdmin,
+        isReadonly,
         setupRequired,
         loading,
         hasUser,

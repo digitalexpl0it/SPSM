@@ -20,18 +20,12 @@ import {
   Timer,
   UserCircle,
   Wrench,
+  Radar,
+  Moon,
+  Bug,
 } from "lucide-react";
 import { clearSiteSettingsCache } from "../lib/siteSettings";
-
-const COMMON_TIMEZONES = [
-  "America/Los_Angeles",
-  "America/Denver",
-  "America/Chicago",
-  "America/New_York",
-  "America/Phoenix",
-  "Pacific/Honolulu",
-  "UTC",
-];
+import { TimezoneSelect } from "../components/TimezoneSelect";
 import {
   DEFAULT_TEMP_THRESHOLDS,
   defaultThresholdsLabel,
@@ -42,11 +36,20 @@ import { AccountSettings } from "../components/AccountSettings";
 import { BackupSettings } from "../components/BackupSettings";
 import { DatabaseSettings } from "../components/DatabaseSettings";
 import { HealthRulesSettings } from "../components/HealthRulesSettings";
+import { PvsLanDiscoveryModal } from "../components/PvsLanDiscoveryModal";
+import { PvsVarserverExplorer } from "../components/PvsVarserverExplorer";
 import { SolarThrobber } from "../components/SolarThrobber";
 import { Toggle } from "../components/Toggle";
 import { settingsApi } from "../lib/api";
 import { useAuth } from "../lib/auth";
+import { notifyTestPayload } from "../lib/notifyForm";
 import { formatErrorMessage, useToast } from "../lib/toast";
+import {
+  NEM_PLAN_OPTIONS,
+  parseNemPlan,
+  usesRetailExportCredit,
+  type NemPlan,
+} from "../lib/nemPlan";
 
 type SettingsTab =
   | "system"
@@ -54,7 +57,8 @@ type SettingsTab =
   | "health"
   | "accounts"
   | "backup"
-  | "database";
+  | "database"
+  | "debug";
 
 /** Placeholder only — not a real device serial. */
 const EXAMPLE_PVS_SERIAL = "ZT223485000000W0000";
@@ -72,32 +76,35 @@ function isSmtpConfigured(form: {
   );
 }
 
-const TABS: { id: SettingsTab; label: string; icon: typeof Wrench }[] = [
+const TABS: { id: SettingsTab; label: string; icon: typeof Wrench; adminOnly?: boolean }[] = [
   { id: "system", label: "System", icon: Wrench },
   { id: "notifications", label: "Notifications", icon: Bell },
   { id: "health", label: "Health alerts", icon: HeartPulse },
   { id: "accounts", label: "Accounts", icon: UserCircle },
   { id: "backup", label: "Backup", icon: Archive },
   { id: "database", label: "Database", icon: Database },
+  { id: "debug", label: "Debug", icon: Bug, adminOnly: true },
 ];
 
 const TAB_IDS = new Set<string>(TABS.map((t) => t.id));
 
-function tabFromSearch(params: URLSearchParams): SettingsTab {
+function tabFromSearch(params: URLSearchParams, isAdmin: boolean): SettingsTab {
   const t = params.get("tab");
-  return TAB_IDS.has(t ?? "") ? (t as SettingsTab) : "system";
+  if (!TAB_IDS.has(t ?? "")) return "system";
+  if (t === "debug" && !isAdmin) return "system";
+  return t as SettingsTab;
 }
 
 export function SettingsPage() {
-  const { refreshStatus } = useAuth();
+  const { refreshStatus, isAdmin, isReadonly } = useAuth();
   const { showToast } = useToast();
   const [searchParams, setSearchParams] = useSearchParams();
-  const [tab, setTab] = useState<SettingsTab>(() => tabFromSearch(searchParams));
+  const [tab, setTab] = useState<SettingsTab>(() => tabFromSearch(searchParams, isAdmin));
 
   useEffect(() => {
-    const fromUrl = tabFromSearch(searchParams);
+    const fromUrl = tabFromSearch(searchParams, isAdmin);
     setTab((current) => (current === fromUrl ? current : fromUrl));
-  }, [searchParams]);
+  }, [searchParams, isAdmin]);
 
   const selectTab = (id: SettingsTab) => {
     setTab(id);
@@ -137,6 +144,16 @@ export function SettingsPage() {
     notify_smtp_to: "",
     portal_public_url: "",
     monthly_report_enabled: false,
+    co2_kg_per_kwh: 0.4,
+    electricity_import_rate: 0.25,
+    electricity_export_rate: 0.25,
+    nem_plan: "nem2" as NemPlan,
+    temp_coefficient_pct_per_c: -0.3,
+    derating_display_enabled: false,
+    notify_quiet_hours_enabled: false,
+    notify_quiet_start: "22:00",
+    notify_quiet_end: "07:00",
+    notify_quiet_allow_critical: true,
     setup_complete: false,
   });
   const [loading, setLoading] = useState(true);
@@ -144,11 +161,17 @@ export function SettingsPage() {
   const [testing, setTesting] = useState(false);
   const [testingNotify, setTestingNotify] = useState(false);
   const [testingMonthlyReport, setTestingMonthlyReport] = useState(false);
+  const [lanScanOpen, setLanScanOpen] = useState(false);
 
   useEffect(() => {
     settingsApi
       .get()
       .then((s) => {
+        const importRate = parseFloat(s.electricity_import_rate || "0.25") || 0.25;
+        const nemPlan = parseNemPlan(s.nem_plan);
+        const exportRate = usesRetailExportCredit(nemPlan)
+          ? importRate
+          : parseFloat(s.electricity_export_rate || "0.05") || 0.05;
         setForm({
           pvs_host: s.pvs_host || "",
           pvs_serial: s.pvs_serial || "",
@@ -200,6 +223,16 @@ export function SettingsPage() {
             s.portal_public_url?.trim() ||
             (typeof window !== "undefined" ? window.location.origin : ""),
           monthly_report_enabled: s.monthly_report_enabled === "true",
+          co2_kg_per_kwh: parseFloat(s.co2_kg_per_kwh || "0.4") || 0.4,
+          electricity_import_rate: importRate,
+          electricity_export_rate: exportRate,
+          nem_plan: nemPlan,
+          temp_coefficient_pct_per_c: parseFloat(s.temp_coefficient_pct_per_c || "-0.30") || -0.3,
+          derating_display_enabled: s.derating_display_enabled === "true",
+          notify_quiet_hours_enabled: s.notify_quiet_hours_enabled === "true",
+          notify_quiet_start: s.notify_quiet_start || "22:00",
+          notify_quiet_end: s.notify_quiet_end || "07:00",
+          notify_quiet_allow_critical: s.notify_quiet_allow_critical !== "false",
           setup_complete: s.setup_complete === "true",
         });
       })
@@ -237,7 +270,7 @@ export function SettingsPage() {
   const testNotification = async () => {
     setTestingNotify(true);
     try {
-      const res = await settingsApi.testNotify();
+      const res = await settingsApi.testNotify(notifyTestPayload(form));
       showToast("success", res.message);
     } catch (e) {
       showToast("error", formatErrorMessage(e));
@@ -248,6 +281,10 @@ export function SettingsPage() {
 
   const save = async (e: FormEvent) => {
     e.preventDefault();
+    if (isReadonly) {
+      showToast("error", "Your account is read-only.");
+      return;
+    }
     if (!form.pvs_host || !form.pvs_serial) {
       showToast("error", "PVS host and serial are required.");
       return;
@@ -290,20 +327,26 @@ export function SettingsPage() {
       <header>
         <h1 className="text-2xl font-bold text-gradient">Settings</h1>
         <p className="text-sm text-mist mt-1">
-          System, notifications, health alerts, accounts, backup, and database.
+          System, notifications, health alerts, accounts, backup, database, and debug tools.
         </p>
       </header>
 
+      {isReadonly && (
+        <p className="text-sm text-amber-300/90 card-glow px-4 py-3 border border-amber-500/30">
+          Read-only account — you can view settings but cannot save changes.
+        </p>
+      )}
+
       <nav
-        className="flex flex-wrap gap-1 p-1 rounded-xl bg-panel/60 border border-surface/80 w-fit max-w-full"
+        className="flex gap-1 p-1 rounded-xl bg-panel/60 border border-surface/80 w-full max-w-full overflow-x-auto"
         aria-label="Settings sections"
       >
-        {TABS.map(({ id, label, icon: Icon }) => (
+        {TABS.filter((t) => !t.adminOnly || isAdmin).map(({ id, label, icon: Icon }) => (
           <button
             key={id}
             type="button"
             onClick={() => selectTab(id)}
-            className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition ${
+            className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition shrink-0 min-h-[2.75rem] ${
               tab === id
                 ? "bg-gradient-to-r from-cyan/20 to-purple-500/20 text-cyan-glow border border-cyan/30 shadow-[0_0_16px_rgb(34_211_238/0.15)]"
                 : "text-mist hover:text-cyan-glow/90 border border-transparent"
@@ -379,19 +422,32 @@ export function SettingsPage() {
                 }
               />
 
-              <button
-                type="button"
-                onClick={testConnection}
-                disabled={testing || !form.pvs_host}
-                className="flex items-center gap-2 px-4 py-2 rounded-xl border border-cyan/30 text-cyan-glow hover:bg-cyan/10 transition"
-              >
-                {testing ? (
-                  <Loader2 className="w-4 h-4 animate-spin" />
-                ) : (
-                  <RefreshCw className="w-4 h-4" />
+              <div className="flex flex-wrap gap-2">
+                <button
+                  type="button"
+                  onClick={testConnection}
+                  disabled={testing || !form.pvs_host}
+                  className="flex items-center gap-2 px-4 py-2 rounded-xl border border-cyan/30 text-cyan-glow hover:bg-cyan/10 transition"
+                >
+                  {testing ? (
+                    <Loader2 className="w-4 h-4 animate-spin" />
+                  ) : (
+                    <RefreshCw className="w-4 h-4" />
+                  )}
+                  Test connection
+                </button>
+                {isAdmin && (
+                  <button
+                    type="button"
+                    onClick={() => setLanScanOpen(true)}
+                    disabled={!form.pvs_host.trim()}
+                    className="flex items-center gap-2 px-4 py-2 rounded-xl border border-purple-500/30 text-purple-300 hover:bg-purple-500/10 transition text-sm"
+                  >
+                    <Radar className="w-4 h-4" />
+                    Scan LAN
+                  </button>
                 )}
-                Test connection
-              </button>
+              </div>
             </section>
 
               <section className="card-glow p-6 space-y-4">
@@ -419,19 +475,13 @@ export function SettingsPage() {
                 />
                 <div>
                   <label className="text-xs text-mist block mb-1">Timezone</label>
-                  <select
-                    className="input-dark w-full"
+                  <TimezoneSelect
                     value={form.site_timezone}
-                    onChange={(e) => setForm({ ...form, site_timezone: e.target.value })}
-                  >
-                    {COMMON_TIMEZONES.map((tz) => (
-                      <option key={tz} value={tz}>
-                        {tz}
-                      </option>
-                    ))}
-                  </select>
-                  <p className="text-xs text-mist mt-1">
-                    Used for &quot;today&quot; totals, reports, and daylight health checks.
+                    onChange={(site_timezone) => setForm({ ...form, site_timezone })}
+                  />
+                  <p className="text-xs text-mist mt-1.5">
+                    Used for &quot;today&quot; totals, reports, quiet hours, and daylight health
+                    checks.
                   </p>
                 </div>
               </section>
@@ -633,6 +683,126 @@ export function SettingsPage() {
 
               <section className="card-glow p-6 space-y-4">
                 <h2 className="text-lg font-semibold flex items-center gap-2 text-cyan-glow">
+                  <BarChart3 className="w-5 h-5" />
+                  Reports &amp; estimates
+                </h2>
+                <div>
+                  <label className="text-xs text-mist block mb-1">CO₂ factor (kg per kWh)</label>
+                  <input
+                    type="number"
+                    step={0.01}
+                    min={0}
+                    max={2}
+                    className="input-dark w-32"
+                    value={form.co2_kg_per_kwh}
+                    onChange={(e) =>
+                      setForm({
+                        ...form,
+                        co2_kg_per_kwh: parseFloat(e.target.value) || 0,
+                      })
+                    }
+                  />
+                </div>
+                <div>
+                  <label className="text-xs text-mist block mb-1">Net billing plan</label>
+                  <select
+                    className="input-dark w-full max-w-md"
+                    value={form.nem_plan}
+                    onChange={(e) => {
+                      const nem_plan = parseNemPlan(e.target.value);
+                      setForm((prev) => ({
+                        ...prev,
+                        nem_plan,
+                        ...(usesRetailExportCredit(nem_plan)
+                          ? { electricity_export_rate: prev.electricity_import_rate }
+                          : {}),
+                      }));
+                    }}
+                  >
+                    {NEM_PLAN_OPTIONS.map((o) => (
+                      <option key={o.id} value={o.id}>
+                        {o.label}
+                      </option>
+                    ))}
+                  </select>
+                  <p className="text-xs text-mist mt-1.5 max-w-xl">
+                    {NEM_PLAN_OPTIONS.find((o) => o.id === form.nem_plan)?.hint}
+                  </p>
+                </div>
+                <div className="grid gap-3 sm:grid-cols-2">
+                  <div>
+                    <label className="text-xs text-mist block mb-1">Import rate ($/kWh)</label>
+                    <input
+                      type="number"
+                      step={0.01}
+                      min={0}
+                      className="input-dark w-full"
+                      value={form.electricity_import_rate}
+                      onChange={(e) => {
+                        const electricity_import_rate = parseFloat(e.target.value) || 0;
+                        setForm((prev) => ({
+                          ...prev,
+                          electricity_import_rate,
+                          ...(usesRetailExportCredit(prev.nem_plan)
+                            ? { electricity_export_rate: electricity_import_rate }
+                            : {}),
+                        }));
+                      }}
+                    />
+                  </div>
+                  <div>
+                    <label className="text-xs text-mist block mb-1">
+                      Export credit ($/kWh)
+                      {usesRetailExportCredit(form.nem_plan) && (
+                        <span className="text-mist/80"> — same as import (NEM)</span>
+                      )}
+                    </label>
+                    <input
+                      type="number"
+                      step={0.01}
+                      min={0}
+                      className="input-dark w-full disabled:opacity-60"
+                      value={form.electricity_export_rate}
+                      disabled={usesRetailExportCredit(form.nem_plan)}
+                      onChange={(e) =>
+                        setForm({
+                          ...form,
+                          electricity_export_rate: parseFloat(e.target.value) || 0,
+                        })
+                      }
+                    />
+                  </div>
+                </div>
+                <div>
+                  <label className="text-xs text-mist block mb-1">
+                    Temp coefficient (%/°C, negative)
+                  </label>
+                  <input
+                    type="number"
+                    step={0.01}
+                    min={-1}
+                    max={0}
+                    className="input-dark w-32"
+                    value={form.temp_coefficient_pct_per_c}
+                    onChange={(e) =>
+                      setForm({
+                        ...form,
+                        temp_coefficient_pct_per_c: parseFloat(e.target.value) || -0.3,
+                      })
+                    }
+                  />
+                </div>
+                <Toggle
+                  checked={form.derating_display_enabled}
+                  onChange={(derating_display_enabled) =>
+                    setForm({ ...form, derating_display_enabled })
+                  }
+                  label="Show expected vs actual power on Inverters (derating estimate)"
+                />
+              </section>
+
+              <section className="card-glow p-6 space-y-4">
+                <h2 className="text-lg font-semibold flex items-center gap-2 text-cyan-glow">
                   <Battery className="w-5 h-5" />
                   Battery / SunVault
                 </h2>
@@ -649,7 +819,19 @@ export function SettingsPage() {
             </div>
           </div>
 
-          <button type="submit" className="btn-primary" disabled={saving}>
+          {isAdmin && (
+            <PvsLanDiscoveryModal
+              open={lanScanOpen}
+              seedHost={form.pvs_host}
+              onClose={() => setLanScanOpen(false)}
+              onSelectHost={(ip) => setForm((f) => ({ ...f, pvs_host: ip }))}
+              onSelectSerial={(serial) =>
+                setForm((f) => ({ ...f, pvs_serial: serial.toUpperCase() }))
+              }
+            />
+          )}
+
+          <button type="submit" className="btn-primary" disabled={isReadonly || saving}>
             {saving ? "Saving…" : "Save settings"}
           </button>
         </form>
@@ -839,6 +1021,7 @@ export function SettingsPage() {
                 <option value="warning">Warning and critical</option>
               </select>
             </div>
+
             <button
               type="button"
               disabled={testingNotify}
@@ -848,6 +1031,56 @@ export function SettingsPage() {
               {testingNotify ? "Sending…" : "Send test alert email"}
             </button>
           </section>
+
+          <div className="space-y-6">
+            <section className="card-glow p-6 space-y-4">
+              <h2 className="text-lg font-semibold flex items-center gap-2 text-cyan-glow">
+                <Moon className="w-5 h-5" />
+                Quiet hours
+              </h2>
+              <p className="text-sm text-mist">
+                Pause alert delivery during a daily window in your site timezone. Health checks still
+                run; only push/email/webhook delivery is suppressed.
+              </p>
+              <Toggle
+                checked={form.notify_quiet_hours_enabled}
+                onChange={(notify_quiet_hours_enabled) =>
+                  setForm({ ...form, notify_quiet_hours_enabled })
+                }
+                label="Enable quiet hours"
+                disabled={!form.notify_enabled}
+              />
+              <div className="flex flex-wrap gap-3">
+                <div>
+                  <label className="text-xs text-mist block mb-1">Start</label>
+                  <input
+                    type="time"
+                    className="input-dark"
+                    value={form.notify_quiet_start}
+                    onChange={(e) => setForm({ ...form, notify_quiet_start: e.target.value })}
+                    disabled={!form.notify_enabled || !form.notify_quiet_hours_enabled}
+                  />
+                </div>
+                <div>
+                  <label className="text-xs text-mist block mb-1">End</label>
+                  <input
+                    type="time"
+                    className="input-dark"
+                    value={form.notify_quiet_end}
+                    onChange={(e) => setForm({ ...form, notify_quiet_end: e.target.value })}
+                    disabled={!form.notify_enabled || !form.notify_quiet_hours_enabled}
+                  />
+                </div>
+              </div>
+              <Toggle
+                checked={form.notify_quiet_allow_critical}
+                onChange={(notify_quiet_allow_critical) =>
+                  setForm({ ...form, notify_quiet_allow_critical })
+                }
+                label="Allow critical alerts during quiet hours"
+                disabled={!form.notify_enabled || !form.notify_quiet_hours_enabled}
+              />
+            </section>
 
           <section className="card-glow p-6 space-y-4">
             <h2 className="text-lg font-semibold flex items-center gap-2 text-cyan-glow">
@@ -897,14 +1130,14 @@ export function SettingsPage() {
             </p>
           </section>
           </div>
+          </div>
 
           <p className="text-xs text-mist">
-            Save settings before testing — the server uses your saved configuration. Alert test
-            emails show Warning &amp; Critical samples; monthly test sends a production report
-            layout.
+            Test alert uses the values on this page (no save required). Monthly test still uses saved
+            SMTP settings.
           </p>
 
-          <button type="submit" className="btn-primary" disabled={saving}>
+          <button type="submit" className="btn-primary" disabled={isReadonly || saving}>
             {saving ? "Saving…" : "Save settings"}
           </button>
         </form>
@@ -917,6 +1150,27 @@ export function SettingsPage() {
       {tab === "backup" && <BackupSettings />}
 
       {tab === "database" && <DatabaseSettings />}
+
+      {tab === "debug" && isAdmin && (
+        <div className="space-y-4 max-w-3xl">
+          <p className="text-sm text-mist">
+            Admin troubleshooting tools for your PVS. Uses the host and serial from the{" "}
+            <button
+              type="button"
+              onClick={() => selectTab("system")}
+              className="text-cyan-glow hover:underline"
+            >
+              System
+            </button>{" "}
+            tab (saved or unsaved values on this page load).
+          </p>
+          <PvsVarserverExplorer
+            pvsHost={form.pvs_host}
+            pvsSerial={form.pvs_serial}
+            pvsVerifySsl={form.pvs_verify_ssl}
+          />
+        </div>
+      )}
     </div>
   );
 }

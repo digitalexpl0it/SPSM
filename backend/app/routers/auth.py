@@ -28,6 +28,7 @@ class RegisterRequest(BaseModel):
 class UserResponse(BaseModel):
     username: str
     is_admin: bool
+    is_readonly: bool = False
 
 
 @router.post("/login", response_model=TokenResponse)
@@ -64,7 +65,11 @@ async def register(body: RegisterRequest, db: Annotated[AsyncSession, Depends(ge
 
 @router.get("/me", response_model=UserResponse)
 async def me(user: Annotated[User, Depends(get_current_user)]):
-    return UserResponse(username=user.username, is_admin=user.is_admin)
+    return UserResponse(
+        username=user.username,
+        is_admin=user.is_admin,
+        is_readonly=user.is_readonly,
+    )
 
 
 @router.get("/status")

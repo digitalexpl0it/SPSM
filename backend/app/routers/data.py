@@ -1,7 +1,11 @@
+import csv
+import io
+import json
 from datetime import UTC, datetime, timedelta
 from typing import Annotated, Any, Literal
 
 from fastapi import APIRouter, Depends, Query
+from fastapi.responses import StreamingResponse
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -145,6 +149,119 @@ async def latest_devices(
         seen.add(r.category)
         out.append({"ts": r.ts.isoformat(), "category": r.category, "payload": r.payload})
     return out
+
+
+def _match_inverter_serial(path: str, fields: dict[str, Any], serial: str) -> bool:
+    sn = str(fields.get("sn") or "").strip()
+    if sn and sn == serial:
+        return True
+    return serial in path
+
+
+@router.get("/inverters/series")
+async def inverter_series(
+    _: Annotated[User, Depends(get_current_user)],
+    db: Annotated[AsyncSession, Depends(get_db)],
+    serial: str = Query(..., min_length=1, max_length=64),
+    range: str = Query("day", pattern="^(day|week|month)$"),
+):
+    deltas = {
+        "day": timedelta(days=1),
+        "week": timedelta(days=7),
+        "month": timedelta(days=30),
+    }
+    since = datetime.now(UTC) - deltas.get(range, timedelta(days=1))
+    result = await db.execute(
+        select(DeviceSnapshot)
+        .where(
+            DeviceSnapshot.category == "inverters",
+            DeviceSnapshot.ts >= since,
+        )
+        .order_by(DeviceSnapshot.ts.asc())
+    )
+    points: list[dict[str, Any]] = []
+    for snap in result.scalars():
+        if not isinstance(snap.payload, dict):
+            continue
+        for path, raw in snap.payload.items():
+            if not isinstance(raw, dict):
+                continue
+            if not _match_inverter_serial(path, raw, serial):
+                continue
+            kw = safe_float(raw.get("pMppt1Kw") or raw.get("p3phsumKw")) or 0.0
+            temp = safe_float(raw.get("tHtsnkDegc"))
+            points.append(
+                {
+                    "ts": snap.ts.isoformat(),
+                    "kw": round(kw, 3),
+                    "temp": round(temp, 1) if temp is not None else None,
+                }
+            )
+            break
+
+    return sanitize_for_json(
+        {"serial": serial, "range": range, "since": since.isoformat(), "points": points}
+    )
+
+
+@router.get("/devices/export")
+async def export_device_snapshots(
+    _: Annotated[User, Depends(get_current_user)],
+    db: Annotated[AsyncSession, Depends(get_db)],
+    category: str | None = Query(None),
+    days: int = Query(7, ge=1, le=365),
+    format: str = Query("json", pattern="^(json|csv)$"),
+):
+    since = datetime.now(UTC) - timedelta(days=days)
+    q = (
+        select(DeviceSnapshot)
+        .where(DeviceSnapshot.ts >= since)
+        .order_by(DeviceSnapshot.ts.asc())
+    )
+    if category:
+        q = q.where(DeviceSnapshot.category == category)
+    result = await db.execute(q)
+    rows = result.scalars().all()
+
+    if format == "json":
+        payload = sanitize_for_json(
+            [
+                {
+                    "ts": r.ts.isoformat(),
+                    "category": r.category,
+                    "payload": r.payload,
+                }
+                for r in rows
+            ]
+        )
+        body = json.dumps(payload, indent=2)
+        return StreamingResponse(
+            iter([body]),
+            media_type="application/json",
+            headers={
+                "Content-Disposition": f'attachment; filename="spsm-devices-{days}d.json"'
+            },
+        )
+
+    buf = io.StringIO()
+    writer = csv.writer(buf)
+    writer.writerow(["ts", "category", "payload_json"])
+    for r in rows:
+        writer.writerow(
+            [
+                r.ts.isoformat(),
+                r.category,
+                json.dumps(r.payload, separators=(",", ":")),
+            ]
+        )
+    buf.seek(0)
+    return StreamingResponse(
+        iter([buf.getvalue()]),
+        media_type="text/csv",
+        headers={
+            "Content-Disposition": f'attachment; filename="spsm-devices-{days}d.csv"'
+        },
+    )
 
 
 @router.get("/summary")

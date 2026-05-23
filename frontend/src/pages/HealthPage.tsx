@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import {
   AlertCircle,
   AlertTriangle,
@@ -8,7 +8,9 @@ import {
   Info,
   Loader2,
   RefreshCw,
+  ShieldCheck,
 } from "lucide-react";
+import { useSearchParams } from "react-router-dom";
 import { SolarThrobber } from "../components/SolarThrobber";
 import {
   healthApi,
@@ -17,7 +19,9 @@ import {
   type HealthAlert,
 } from "../lib/api";
 import { formatChartDateTime } from "../lib/formatChartDateTime";
+import { useAuth } from "../lib/auth";
 import { getSiteTimezone, loadSiteSettings } from "../lib/siteSettings";
+import { formatErrorMessage, useToast } from "../lib/toast";
 import {
   defaultHealthThresholdsLine,
   tempThresholdsLabel,
@@ -61,12 +65,37 @@ function SummaryBadge({ summary }: { summary: HealthResponse["summary"] }) {
 }
 
 export function HealthPage() {
+  const { isReadonly } = useAuth();
+  const { showToast } = useToast();
+  const [searchParams] = useSearchParams();
+  const historyRef = useRef<HTMLDetailsElement>(null);
   const [data, setData] = useState<HealthResponse | null>(null);
   const [history, setHistory] = useState<HealthHistoryEvent[]>([]);
   const [siteTz, setSiteTz] = useState<string | undefined>();
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [ackingId, setAckingId] = useState<number | null>(null);
+
+  const acknowledge = async (id: number) => {
+    if (isReadonly) return;
+    setAckingId(id);
+    try {
+      await healthApi.acknowledge(id);
+      setHistory((prev) =>
+        prev.map((ev) =>
+          ev.id === id
+            ? { ...ev, acknowledged_at: new Date().toISOString(), acknowledged_by: 1 }
+            : ev
+        )
+      );
+      showToast("success", "Alert acknowledged — repeat notifications paused until resolved.");
+    } catch (e) {
+      showToast("error", formatErrorMessage(e));
+    } finally {
+      setAckingId(null);
+    }
+  };
 
   const load = useCallback(async (initial = false) => {
     if (!initial) setRefreshing(true);
@@ -91,6 +120,12 @@ export function HealthPage() {
   useEffect(() => {
     load(true);
   }, [load]);
+
+  useEffect(() => {
+    if (searchParams.get("history") === "1" && historyRef.current) {
+      historyRef.current.open = true;
+    }
+  }, [searchParams, history.length]);
 
   if (loading) return <SolarThrobber label="Running health checks…" />;
 
@@ -201,7 +236,27 @@ export function HealthPage() {
               <h2 className="text-sm font-medium text-mist px-4 py-3 border-b border-surface/80">
                 {data.alerts.length} alert{data.alerts.length !== 1 ? "s" : ""}
               </h2>
-              <div className="overflow-x-auto">
+              <div className="md:hidden p-3 space-y-3">
+                {data.alerts.map((alert) => {
+                  const meta = SEVERITY_META[alert.severity];
+                  const Icon = meta.icon;
+                  return (
+                    <div
+                      key={alert.id}
+                      className="rounded-lg border border-surface/80 p-3 space-y-1 text-sm"
+                    >
+                      <span className={`inline-flex items-center gap-1 text-xs uppercase ${meta.row}`}>
+                        <Icon className="w-3.5 h-3.5" />
+                        {meta.label}
+                      </span>
+                      <p className="font-medium text-cyan-glow/90">{alert.title}</p>
+                      <p className="text-mist">{alert.message}</p>
+                      {alert.detail && <p className="text-xs text-mist/80">{alert.detail}</p>}
+                    </div>
+                  );
+                })}
+              </div>
+              <div className="overflow-x-auto hidden md:block">
                 <table className="table-zebra">
                   <thead>
                     <tr>
@@ -240,12 +295,52 @@ export function HealthPage() {
           )}
 
           {history.length > 0 && (
-            <details className="card-glow p-5 group">
+            <details ref={historyRef} className="card-glow p-5 group" open={searchParams.get("history") === "1"}>
               <summary className="text-sm font-medium text-mist flex items-center gap-2 cursor-pointer select-none list-none [&::-webkit-details-marker]:hidden">
                 Recent history ({history.length})
                 <ChevronDown className="w-4 h-4 ml-auto shrink-0 transition-transform group-open:rotate-180" />
               </summary>
-              <div className="mt-3 overflow-x-auto">
+              <div className="mt-3 md:hidden space-y-2">
+                {history.map((ev) => (
+                  <div
+                    key={ev.id}
+                    className="rounded-lg border border-surface/80 p-3 text-sm space-y-2"
+                  >
+                    <div className="flex justify-between gap-2">
+                      <span className="capitalize text-mist">{ev.severity}</span>
+                      <span className="text-xs">
+                        {ev.active && !ev.resolved_at ? (
+                          <span className="text-amber-300">Active</span>
+                        ) : (
+                          <span className="text-emerald-400/90">Resolved</span>
+                        )}
+                      </span>
+                    </div>
+                    <p className="font-medium text-cyan-glow/90">{ev.title}</p>
+                    <p className="text-xs text-mist">
+                      {formatChartDateTime(ev.first_seen, siteTz)} →{" "}
+                      {formatChartDateTime(ev.last_seen, siteTz)}
+                    </p>
+                    {ev.acknowledged_at && (
+                      <p className="text-xs text-cyan-200/80 flex items-center gap-1">
+                        <ShieldCheck className="w-3.5 h-3.5" />
+                        Acknowledged
+                      </p>
+                    )}
+                    {ev.active && !ev.resolved_at && !ev.acknowledged_at && !isReadonly && (
+                      <button
+                        type="button"
+                        disabled={ackingId === ev.id}
+                        onClick={() => acknowledge(ev.id)}
+                        className="text-xs border border-cyan/30 px-3 py-1.5 rounded-lg text-cyan-glow"
+                      >
+                        {ackingId === ev.id ? "…" : "Acknowledge"}
+                      </button>
+                    )}
+                  </div>
+                ))}
+              </div>
+              <div className="mt-3 overflow-x-auto hidden md:block">
                 <table className="table-zebra text-sm">
                   <thead>
                     <tr>
@@ -254,6 +349,7 @@ export function HealthPage() {
                       <th>First seen</th>
                       <th>Last seen</th>
                       <th>Status</th>
+                      <th className="w-28" />
                     </tr>
                   </thead>
                   <tbody>
@@ -277,6 +373,21 @@ export function HealthPage() {
                                 ? ` · ${formatChartDateTime(ev.resolved_at, siteTz)}`
                                 : ""}
                             </span>
+                          )}
+                          {ev.acknowledged_at && (
+                            <span className="block text-cyan-200/70 mt-0.5">Acked</span>
+                          )}
+                        </td>
+                        <td>
+                          {ev.active && !ev.resolved_at && !ev.acknowledged_at && !isReadonly && (
+                            <button
+                              type="button"
+                              disabled={ackingId === ev.id}
+                              onClick={() => acknowledge(ev.id)}
+                              className="text-xs text-cyan-glow border border-cyan/30 px-2 py-1 rounded hover:bg-cyan/10"
+                            >
+                              {ackingId === ev.id ? "…" : "Ack"}
+                            </button>
                           )}
                         </td>
                       </tr>

@@ -110,6 +110,33 @@ def totals_from_days(days_list: list[dict[str, Any]]) -> dict[str, float]:
     }
 
 
+def savings_from_totals(
+    totals: dict[str, float],
+    *,
+    import_rate: float,
+    export_rate: float,
+) -> dict[str, float]:
+    """Estimated bill impact from import/export rates ($/kWh)."""
+    pv = totals.get("pv_kwh") or 0.0
+    load = totals.get("load_kwh") or 0.0
+    imp = totals.get("import_kwh") or 0.0
+    exp = totals.get("export_kwh") or 0.0
+    self_kwh = round(min(pv, load), 2) if load > 0.01 else 0.0
+    import_cost = round(imp * import_rate, 2)
+    export_credit = round(exp * export_rate, 2)
+    self_value = round(self_kwh * import_rate, 2)
+    net_savings = round(self_value + export_credit - import_cost, 2)
+    return {
+        "self_consumption_kwh": self_kwh,
+        "import_cost": import_cost,
+        "export_credit": export_credit,
+        "self_consumption_value": self_value,
+        "net_savings": net_savings,
+        "import_rate": import_rate,
+        "export_rate": export_rate,
+    }
+
+
 async def readings_for_local_period(
     db: AsyncSession,
     keys: list[str],

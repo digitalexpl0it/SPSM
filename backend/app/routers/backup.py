@@ -9,7 +9,7 @@ from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile
 from fastapi.responses import Response
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.auth import get_current_user
+from app.auth import require_admin, require_write_access
 from app.backup import (
     build_backup_payload,
     decode_backup_file,
@@ -19,26 +19,23 @@ from app.backup import (
 )
 from app.database import get_db
 from app.models import User
-from app.routers.users import require_admin
 
 router = APIRouter(prefix="/api/backup", tags=["backup"])
 
 
 @router.get("/stats")
 async def backup_stats(
-    user: Annotated[User, Depends(get_current_user)],
+    _: Annotated[User, Depends(require_admin)],
     db: Annotated[AsyncSession, Depends(get_db)],
 ):
-    require_admin(user)
     return await table_counts(db)
 
 
 @router.get("/export")
 async def export_backup(
-    user: Annotated[User, Depends(get_current_user)],
+    _: Annotated[User, Depends(require_admin)],
     db: Annotated[AsyncSession, Depends(get_db)],
 ):
-    require_admin(user)
     payload = await build_backup_payload(db)
     body = encode_backup_gzip(payload)
     stamp = datetime.now(UTC).strftime("%Y%m%d")
@@ -53,7 +50,8 @@ async def export_backup(
 
 @router.post("/import")
 async def restore_backup(
-    user: Annotated[User, Depends(get_current_user)],
+    _: Annotated[User, Depends(require_admin)],
+    __: Annotated[User, Depends(require_write_access)],
     db: Annotated[AsyncSession, Depends(get_db)],
     file: UploadFile = File(...),
     import_settings: bool = Query(True),
@@ -61,7 +59,6 @@ async def restore_backup(
     import_users: bool = Query(False),
     replace_existing: bool = Query(True),
 ):
-    require_admin(user)
     if not file.filename:
         raise HTTPException(status_code=400, detail="No file uploaded")
     raw = await file.read()

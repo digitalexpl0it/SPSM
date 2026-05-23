@@ -40,7 +40,16 @@ KEYS = {
     "monthly_report_enabled": "false",
     "monthly_report_last_sent": "",
     "co2_kg_per_kwh": "0.4",
+    "electricity_import_rate": "",
+    "electricity_export_rate": "",
+    "nem_plan": "nem2",
     "temp_coefficient_pct_per_c": "-0.30",
+    "derating_display_enabled": "false",
+    "notify_quiet_hours_enabled": "false",
+    "notify_quiet_start": "22:00",
+    "notify_quiet_end": "07:00",
+    "notify_quiet_allow_critical": "true",
+    "health_sunrise_ramp_smart": "false",
     "data_retention_enabled": "false",
     "data_retention_years": "5",
     "data_retention_last_purge": "",
@@ -135,3 +144,33 @@ async def is_setup_complete(session: AsyncSession) -> bool:
     serial = await get_setting(session, "pvs_serial")
     complete = await get_setting(session, "setup_complete")
     return complete.lower() == "true" and bool(host.strip()) and bool(serial.strip())
+
+
+def electricity_rate_from_settings(settings: dict[str, str], key: str) -> float:
+    raw = (settings.get(key) or "").strip()
+    if not raw:
+        return 0.0
+    try:
+        return max(0.0, float(raw))
+    except ValueError:
+        return 0.0
+
+
+VALID_NEM_PLANS = frozenset({"nem1", "nem2", "nem3", "custom"})
+
+
+def nem_plan_from_settings(settings: dict[str, str]) -> str:
+    raw = (settings.get("nem_plan") or "nem2").strip().lower()
+    return raw if raw in VALID_NEM_PLANS else "custom"
+
+
+def effective_electricity_rates(
+    settings: dict[str, str],
+) -> tuple[float, float, str]:
+    """Return (import_rate, export_rate, nem_plan). NEM 1/2 use retail credit for exports."""
+    import_rate = electricity_rate_from_settings(settings, "electricity_import_rate")
+    export_rate = electricity_rate_from_settings(settings, "electricity_export_rate")
+    plan = nem_plan_from_settings(settings)
+    if plan in ("nem1", "nem2"):
+        export_rate = import_rate
+    return import_rate, export_rate, plan

@@ -1,19 +1,23 @@
 import { useCallback, useEffect, useState } from "react";
-import { Pencil, Trash2, UserPlus, X } from "lucide-react";
+import { Pencil, Trash2, UserPlus, X, BookOpen } from "lucide-react";
+import { ApiTokensSettings } from "./ApiTokensSettings";
 import { Toggle } from "./Toggle";
 import { usersApi, type PortalUser } from "../lib/api";
+import { apiDocsUrl } from "../lib/apiBase";
 import { useAuth } from "../lib/auth";
 
 type UserFormState = {
   username: string;
   password: string;
   is_admin: boolean;
+  is_readonly: boolean;
 };
 
 const emptyForm = (): UserFormState => ({
   username: "",
   password: "",
   is_admin: false,
+  is_readonly: false,
 });
 
 export function AccountSettings() {
@@ -54,7 +58,12 @@ export function AccountSettings() {
 
   const openEdit = (u: PortalUser) => {
     setEditing(u);
-    setForm({ username: u.username, password: "", is_admin: u.is_admin });
+    setForm({
+      username: u.username,
+      password: "",
+      is_admin: u.is_admin,
+      is_readonly: u.is_readonly,
+    });
     setFormMsg("");
     setModal("edit");
   };
@@ -76,12 +85,23 @@ export function AccountSettings() {
           setFormMsg("Password is required (min 6 characters).");
           return;
         }
-        await usersApi.create(form.username, form.password, form.is_admin);
+        await usersApi.create(
+          form.username,
+          form.password,
+          form.is_admin,
+          form.is_readonly
+        );
         setFormMsg("User created.");
       } else if (editing) {
-        const body: { username?: string; password?: string; is_admin?: boolean } = {
+        const body: {
+          username?: string;
+          password?: string;
+          is_admin?: boolean;
+          is_readonly?: boolean;
+        } = {
           username: form.username,
           is_admin: form.is_admin,
+          is_readonly: form.is_readonly,
         };
         if (form.password) {
           if (form.password.length < 6) {
@@ -150,13 +170,14 @@ export function AccountSettings() {
             <tr>
               <th>Username</th>
               <th>Role</th>
+              <th>Access</th>
               <th className="text-right w-28">Actions</th>
             </tr>
           </thead>
           <tbody>
             {users.length === 0 ? (
               <tr>
-                <td colSpan={3} className="text-mist py-8 text-center">
+                <td colSpan={4} className="text-mist py-8 text-center">
                   No users yet. Create one to get started.
                 </td>
               </tr>
@@ -174,6 +195,9 @@ export function AccountSettings() {
                     >
                       {u.is_admin ? "Admin" : "User"}
                     </span>
+                  </td>
+                  <td className="text-xs text-mist">
+                    {u.is_readonly ? "Read-only" : "Read/write"}
                   </td>
                   <td>
                     <div className="flex justify-end gap-1">
@@ -259,8 +283,18 @@ export function AccountSettings() {
               </div>
               <Toggle
                 checked={form.is_admin}
-                onChange={(is_admin) => setForm({ ...form, is_admin })}
+                onChange={(is_admin) =>
+                  setForm({ ...form, is_admin, ...(is_admin ? { is_readonly: false } : {}) })
+                }
                 label="Grant admin access (can change system settings)"
+              />
+              <Toggle
+                checked={form.is_readonly}
+                onChange={(is_readonly) =>
+                  setForm({ ...form, is_readonly, ...(is_readonly ? { is_admin: false } : {}) })
+                }
+                label="Read-only (view dashboards, cannot save settings)"
+                disabled={form.is_admin}
               />
 
               {formMsg && (
@@ -291,6 +325,22 @@ export function AccountSettings() {
           </div>
         </div>
       )}
+
+      <div className="pt-6 border-t border-surface/80">
+        <div className="flex flex-wrap items-center justify-between gap-3 mb-4">
+          <h2 className="text-lg font-semibold text-cyan-glow">API tokens</h2>
+          <a
+            href={apiDocsUrl()}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="inline-flex items-center gap-2 text-sm text-cyan-glow border border-cyan/30 px-3 py-1.5 rounded-lg hover:bg-cyan/10 transition"
+          >
+            <BookOpen className="w-4 h-4 shrink-0" />
+            API docs (Swagger)
+          </a>
+        </div>
+        <ApiTokensSettings />
+      </div>
     </div>
   );
 }

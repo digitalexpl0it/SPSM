@@ -30,6 +30,11 @@ export function apiUrl(path: string): string {
   return path.startsWith("/") ? `${base}${path}` : `${base}/${path}`;
 }
 
+/** Swagger UI — same origin via Vite proxy, or direct API port when VITE_API_URL is set. */
+export function apiDocsUrl(): string {
+  return apiUrl("/docs");
+}
+
 export function formatNetworkError(err: unknown): Error {
   if (
     err instanceof TypeError &&

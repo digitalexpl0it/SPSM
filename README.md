@@ -32,15 +32,16 @@ Daily PV / load / import / export, summary cards, bar chart, year-over-year comp
 
 ## Features
 
-- **Dashboard** — live solar / home load / grid flow, today’s production and consumption, power charts (hour → year)
+- **Dashboard** — live solar / home load / grid flow, today’s production and consumption, power charts (hour → year); mobile-friendly layout
 - **Energy flow diagram** — animated solar → home → grid (day/night visuals, optional battery path)
-- **Micro-inverters** — per-panel power, temperature, voltage, lifetime energy
+- **Micro-inverters** — per-panel power, temperature, voltage, lifetime energy; expandable history charts; optional derating estimate
 - **System** — PVS supervisor info, optional raw meter dump
-- **Reports** — daily PV / load / grid import & export, CO₂ estimate, 7/30/90-day ranges, year-over-year comparison, CSV export, weakest-panel snapshot
-- **Settings** — tabbed UI (**System**, **Notifications**, **Health alerts**, **Accounts**, **Backup**, **Database**); configurable health rules; full gzip backup export/import; optional data retention with auto-purge
-- **Notifications** — master enable plus per-channel toggles for **webhook** (Discord/Slack), **ntfy**, and **SMTP email** (STARTTLS on port 587, e.g. [Mailtrap](https://mailtrap.io) live SMTP); optional **monthly report** email (previous calendar month summary, sent on the 1st in site timezone)
-- **Accounts** — admin user management (create / edit / delete portal users)
-- **System health** — rule-based alerts with history; optional push on new critical/warning events (debounced)
+- **Reports** — daily PV / load / grid import & export, CO₂ estimate, estimated bill savings, panel leaderboard, 7/30/90-day ranges (`?days=`), year-over-year comparison, CSV export
+- **Settings** — tabbed UI with URL deep links (`?tab=`); **System**, **Notifications**, **Health alerts**, **Accounts**, **Backup**, **Database**; LAN PVS discovery and varserver explorer (admin)
+- **Notifications** — master enable plus per-channel toggles for **webhook** (Discord/Slack), **ntfy**, and **SMTP email**; **quiet hours**; test alert using current form values (no save required); optional **monthly report** email
+- **Accounts** — admin user management; **read-only** role; **API tokens** for integrations
+- **System health** — rule-based alerts with history, **acknowledge** active alerts, optional smart sunrise ramp; optional push on new events (debounced)
+- **Mobile shell** — bottom tab bar on phones (Dashboard, Inverters, Reports, Health, More)
 - **Background collector** — polls the PVS on a schedule and stores time-series data in PostgreSQL
 - **Pre-aggregated rollups** — faster week/month/year charts
 - **Prometheus** — `GET /metrics` on the API for external monitoring
@@ -308,10 +309,19 @@ VITE_API_URL=http://localhost:8000 npm run dev
 
 ## Roadmap ideas
 
-- Per-inverter historical charts from stored snapshots
-- Temperature derating estimate on the Inverters page
 - Multi-site / multiple PVS hosts in one portal
-- Test notification using current form values without saving first
+- MQTT / external integrations beyond API tokens
+
+## Recently added
+
+- Mobile bottom navigation (Dashboard, Inverters, Reports, Health, More)
+- Estimated bill savings on Reports (import/export rates in Settings)
+- Per-inverter history charts and production leaderboard
+- Read-only users and API tokens for integrations
+- Test notifications using current form values (no save required)
+- Quiet hours, health alert acknowledge, LAN PVS discovery, varserver explorer
+- Device snapshot export (Database tab)
+- Temperature derating estimate on Inverters (optional)
 
 ## License
 

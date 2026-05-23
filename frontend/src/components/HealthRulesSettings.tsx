@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
 import { HeartPulse, Loader2 } from "lucide-react";
-import { healthApi, type HealthRuleCatalogEntry } from "../lib/api";
+import { healthApi, settingsApi, type HealthRuleCatalogEntry } from "../lib/api";
 import { useAuth } from "../lib/auth";
 import { formatErrorMessage, useToast } from "../lib/toast";
 import { Toggle } from "./Toggle";
@@ -12,17 +12,19 @@ const SEVERITY_CLASS: Record<string, string> = {
 };
 
 export function HealthRulesSettings() {
-  const { isAdmin } = useAuth();
+  const { isAdmin, isReadonly } = useAuth();
   const { showToast } = useToast();
   const [rules, setRules] = useState<HealthRuleCatalogEntry[]>([]);
+  const [smartSunriseRamp, setSmartSunriseRamp] = useState(false);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
 
   const load = useCallback(async () => {
     setLoading(true);
     try {
-      const res = await healthApi.rules();
+      const [res, settings] = await Promise.all([healthApi.rules(), settingsApi.get()]);
       setRules(res.rules);
+      setSmartSunriseRamp(settings.health_sunrise_ramp_smart === "true");
     } catch (e) {
       showToast("error", formatErrorMessage(e));
     } finally {
@@ -65,6 +67,7 @@ export function HealthRulesSettings() {
         settings[t.key] = t.value;
       }
     }
+    settings.health_sunrise_ramp_smart = smartSunriseRamp;
     try {
       const res = await healthApi.saveRules({ settings });
       setRules(res.rules);
@@ -148,9 +151,18 @@ export function HealthRulesSettings() {
         </ul>
       )}
 
+      <div className="border border-surface/80 rounded-xl p-4 bg-void/40 space-y-2">
+        <Toggle
+          checked={smartSunriseRamp}
+          onChange={setSmartSunriseRamp}
+          label="Smart sunrise ramp"
+          description="Widen the morning ramp in winter and narrow it in summer (daylight zero-PV check only). Off uses a fixed 3-hour ramp after 6 AM local."
+        />
+      </div>
+
       <button
         type="button"
-        disabled={saving || loading}
+        disabled={saving || loading || isReadonly}
         onClick={save}
         className="btn-primary disabled:opacity-50"
       >

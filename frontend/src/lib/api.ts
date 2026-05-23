@@ -65,7 +65,8 @@ export const authApi = {
       method: "POST",
       body: JSON.stringify({ username, password }),
     }),
-  me: () => api<{ username: string; is_admin: boolean }>("/api/auth/me"),
+  me: () =>
+    api<{ username: string; is_admin: boolean; is_readonly: boolean }>("/api/auth/me"),
 };
 
 export const settingsApi = {
@@ -83,8 +84,16 @@ export const settingsApi = {
         body: JSON.stringify({ pvs_host, pvs_serial, pvs_verify_ssl }),
       }
     ),
-  testNotify: () =>
-    api<{ ok: boolean; message: string }>("/api/settings/test-notify", { method: "POST" }),
+  testNotify: (body?: TestNotifyPayload) =>
+    api<{ ok: boolean; message: string }>("/api/settings/test-notify", {
+      method: "POST",
+      body: body ? JSON.stringify(body) : undefined,
+    }),
+  discoverPvs: () =>
+    api<{ ok: boolean; seed_host: string; hosts: PvsDiscoveryHost[] }>(
+      "/api/settings/discover-pvs",
+      { method: "POST" }
+    ),
   testMonthlyReport: () =>
     api<{ ok: boolean; message: string }>("/api/settings/test-monthly-report", {
       method: "POST",
@@ -115,11 +124,23 @@ export interface ReportPeriod {
   end: string;
 }
 
+export interface ReportSavings {
+  self_consumption_kwh: number;
+  import_cost: number;
+  export_credit: number;
+  self_consumption_value: number;
+  net_savings: number;
+  import_rate: number;
+  export_rate: number;
+  nem_plan?: "nem1" | "nem2" | "nem3" | "custom";
+}
+
 export interface DailyReportResponse {
   timezone: string;
   period: ReportPeriod;
   days: DailyReportDay[];
   totals: ReportTotals;
+  savings?: ReportSavings;
   year_ago: {
     available: boolean;
     period: ReportPeriod;
@@ -140,6 +161,56 @@ export interface HealthHistoryEvent {
   last_seen: string;
   resolved_at: string | null;
   active: boolean;
+  acknowledged_at: string | null;
+  acknowledged_by: number | null;
+}
+
+export interface TestNotifyPayload {
+  notify_enabled?: boolean;
+  notify_webhook_enabled?: boolean;
+  notify_ntfy_enabled?: boolean;
+  notify_smtp_enabled?: boolean;
+  notify_webhook_url?: string;
+  notify_ntfy_topic?: string;
+  notify_min_severity?: "warning" | "critical";
+  notify_smtp_host?: string;
+  notify_smtp_port?: number;
+  notify_smtp_use_tls?: boolean;
+  notify_smtp_username?: string;
+  notify_smtp_password?: string;
+  notify_smtp_from?: string;
+  notify_smtp_to?: string;
+}
+
+export interface InverterLeaderboardItem {
+  serial: string;
+  path: string;
+  energy_kwh: number | null;
+  peak_kw: number;
+  samples: number;
+}
+
+export interface InverterSeriesPoint {
+  ts: string;
+  kw: number;
+  temp: number | null;
+}
+
+export interface PvsDiscoveryHost {
+  ip: string;
+  status: number;
+  serial: string | null;
+  hostname?: string | null;
+}
+
+export interface ApiTokenItem {
+  id: number;
+  name: string;
+  token_prefix: string;
+  user_id: number;
+  created_at: string;
+  last_used_at: string | null;
+  expires_at: string | null;
 }
 
 export const reportsApi = {
@@ -149,20 +220,68 @@ export const reportsApi = {
     api<{ ts: string; items: { path: string; serial: string; kw: number; temp: number | null }[] }>(
       "/api/reports/inverters/rank"
     ),
+  inverterLeaderboard: (days: number) =>
+    api<{ days: number; items: InverterLeaderboardItem[] }>(
+      `/api/reports/inverters/leaderboard?days=${days}`
+    ),
 };
 
-export type PortalUser = { id: number; username: string; is_admin: boolean };
+export type PortalUser = {
+  id: number;
+  username: string;
+  is_admin: boolean;
+  is_readonly: boolean;
+};
+
+export const tokensApi = {
+  list: () => api<ApiTokenItem[]>("/api/tokens"),
+  create: (name: string, expires_in_days?: number) =>
+    api<ApiTokenItem & { token: string }>("/api/tokens", {
+      method: "POST",
+      body: JSON.stringify({ name, expires_in_days }),
+    }),
+  remove: (id: number) => api<void>(`/api/tokens/${id}`, { method: "DELETE" }),
+};
+
+export const pvsApi = {
+  vars: (
+    prefix = "",
+    opts?: { pvs_host?: string; pvs_serial?: string; pvs_verify_ssl?: boolean }
+  ) => {
+    const q = new URLSearchParams({ prefix });
+    if (opts?.pvs_host) q.set("pvs_host", opts.pvs_host);
+    if (opts?.pvs_serial) q.set("pvs_serial", opts.pvs_serial);
+    if (opts?.pvs_verify_ssl != null) q.set("pvs_verify_ssl", String(opts.pvs_verify_ssl));
+    return api<{
+      ok: boolean;
+      prefix: string;
+      vars: Record<string, unknown>;
+      error?: string;
+      count?: number;
+    }>(`/api/pvs/vars?${q}`);
+  },
+};
 
 export const usersApi = {
   list: () => api<PortalUser[]>("/api/users"),
-  create: (username: string, password: string, is_admin: boolean) =>
+  create: (
+    username: string,
+    password: string,
+    is_admin: boolean,
+    is_readonly = false
+  ) =>
     api<PortalUser>("/api/users", {
       method: "POST",
-      body: JSON.stringify({ username, password, is_admin }),
+      body: JSON.stringify({ username, password, is_admin, is_readonly }),
     }),
   update: (
     id: number,
-    body: { username?: string; password?: string; is_admin?: boolean }
+    body: {
+      username?: string;
+      password?: string;
+      is_admin?: boolean;
+      is_readonly?: boolean;
+    }
   ) =>
     api<PortalUser>(`/api/users/${id}`, {
       method: "PATCH",
@@ -216,6 +335,11 @@ export interface HealthRuleCatalogEntry {
 export const healthApi = {
   site: () => api<HealthResponse>("/api/health/site"),
   history: (days = 30) => api<HealthHistoryEvent[]>(`/api/health/history?days=${days}`),
+  acknowledge: (id: number) =>
+    api<{ ok: boolean; id: number; acknowledged_at: string }>(
+      `/api/health/history/${id}/ack`,
+      { method: "POST" }
+    ),
   rules: () => api<{ rules: HealthRuleCatalogEntry[] }>("/api/health/rules"),
   saveRules: (body: { settings: Record<string, string | boolean | number> }) =>
     api<{ ok: boolean; rules: HealthRuleCatalogEntry[] }>("/api/health/rules", {
@@ -229,11 +353,20 @@ export const dataApi = {
   latest: () => api<Reading | null>("/api/data/latest"),
   series: (range: string, bucket = "hour") =>
     api<SeriesPoint[]>(`/api/data/series?range=${range}&bucket=${bucket}`),
+  inverterSeries: (serial: string, range: "day" | "week" | "month") =>
+    api<{ serial: string; range: string; since: string; points: InverterSeriesPoint[] }>(
+      `/api/data/inverters/series?serial=${encodeURIComponent(serial)}&range=${range}`
+    ),
   summary: () => api<SummaryResponse>("/api/data/summary"),
   devices: (category?: string) =>
     api<DeviceSnapshot[]>(
       `/api/data/devices/latest${category ? `?category=${category}` : ""}`
     ),
+  exportDevicesUrl: (opts: { category?: string; days: number; format: "json" | "csv" }) => {
+    const q = new URLSearchParams({ days: String(opts.days), format: opts.format });
+    if (opts.category) q.set("category", opts.category);
+    return apiUrl(`/api/data/devices/export?${q}`);
+  },
 };
 
 export interface Reading {

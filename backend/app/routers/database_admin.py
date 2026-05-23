@@ -8,7 +8,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, Field
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.auth import get_current_user
+from app.auth import require_admin, require_write_access
 from app.data_retention import (
     MAX_RETENTION_YEARS,
     MIN_RETENTION_YEARS,
@@ -19,7 +19,6 @@ from app.data_retention import (
 )
 from app.database import get_db
 from app.models import User
-from app.routers.users import require_admin
 from app.settings_store import get_all_settings
 
 router = APIRouter(prefix="/api/database", tags=["database"])
@@ -32,20 +31,19 @@ class RetentionSettingsUpdate(BaseModel):
 
 @router.get("/stats")
 async def get_database_stats(
-    user: Annotated[User, Depends(get_current_user)],
+    _: Annotated[User, Depends(require_admin)],
     db: Annotated[AsyncSession, Depends(get_db)],
 ):
-    require_admin(user)
     return await database_stats(db)
 
 
 @router.put("/retention")
 async def update_retention_settings(
     body: RetentionSettingsUpdate,
-    user: Annotated[User, Depends(get_current_user)],
+    _: Annotated[User, Depends(require_admin)],
+    __: Annotated[User, Depends(require_write_access)],
     db: Annotated[AsyncSession, Depends(get_db)],
 ):
-    require_admin(user)
     from app.settings_store import set_setting
 
     await set_setting(db, "data_retention_enabled", "true" if body.data_retention_enabled else "false")
@@ -57,7 +55,8 @@ async def update_retention_settings(
 
 @router.post("/purge")
 async def purge_old_data(
-    user: Annotated[User, Depends(get_current_user)],
+    _: Annotated[User, Depends(require_admin)],
+    __: Annotated[User, Depends(require_write_access)],
     db: Annotated[AsyncSession, Depends(get_db)],
     years: int | None = Query(
         None,
@@ -66,7 +65,6 @@ async def purge_old_data(
         description="Override retention years for this purge only",
     ),
 ):
-    require_admin(user)
     settings = await get_all_settings(db)
 
     if years is not None:

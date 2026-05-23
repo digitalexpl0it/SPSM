@@ -25,7 +25,7 @@ interface Props {
 
 export function PowerChart({ data, range }: Props) {
   return (
-    <div className="card-glow p-4 h-[340px]">
+    <div className="card-glow p-4 h-[280px] md:h-[340px]">
       <h3 className="text-sm font-medium text-mist mb-4 flex items-center gap-2">
         <span className="w-2 h-2 rounded-full bg-gradient-brand" />
         Power over time

@@ -1,28 +1,19 @@
-import { NavLink, Outlet, useNavigate } from "react-router-dom";
-import {
-  BarChart3,
-  CircleHelp,
-  HeartPulse,
-  Home,
-  LogOut,
-  Settings,
-  Sun,
-  Zap,
-} from "lucide-react";
+import { useState } from "react";
+import { NavLink, Outlet, useLocation, useNavigate } from "react-router-dom";
+import { LogOut } from "lucide-react";
+import { MobileBottomNav } from "./MobileBottomNav";
+import { MobileMoreSheet } from "./MobileMoreSheet";
+import { allNavLinks } from "../lib/navLinks";
 import { useAuth } from "../lib/auth";
-const links = [
-  { to: "/", icon: Home, label: "Dashboard" },
-  { to: "/inverters", icon: Sun, label: "Inverters" },
-  { to: "/reports", icon: BarChart3, label: "Reports" },
-  { to: "/health", icon: HeartPulse, label: "Health" },
-  { to: "/system", icon: Zap, label: "System" },
-  { to: "/settings", icon: Settings, label: "Settings" },
-  { to: "/help", icon: CircleHelp, label: "Help" },
-];
 
 export function Layout() {
   const { username, logout } = useAuth();
   const navigate = useNavigate();
+  const location = useLocation();
+  const [moreOpen, setMoreOpen] = useState(false);
+
+  const morePaths = ["/system", "/settings", "/help"];
+  const moreActive = morePaths.some((p) => location.pathname.startsWith(p));
 
   const handleLogout = () => {
     logout();
@@ -30,8 +21,8 @@ export function Layout() {
   };
 
   return (
-    <div className="min-h-screen flex">
-      <aside className="w-56 border-r border-surface/80 bg-panel/50 flex flex-col p-4">
+    <div className="min-h-screen flex flex-col md:flex-row">
+      <aside className="hidden md:flex w-56 border-r border-surface/80 bg-panel/50 flex-col p-4 shrink-0">
         <div className="mb-8 px-2">
           <h1 className="text-xl font-bold bg-gradient-header bg-clip-text text-transparent">
             SPSM
@@ -40,11 +31,11 @@ export function Layout() {
         </div>
 
         <nav className="flex-1 space-y-1">
-          {links.map(({ to, icon: Icon, label }) => (
+          {allNavLinks.map(({ to, icon: Icon, label, end }) => (
             <NavLink
               key={to}
               to={to}
-              end={to === "/"}
+              end={end ?? to === "/"}
               className={({ isActive }) =>
                 `nav-link w-full ${isActive ? "active" : ""}`
               }
@@ -68,9 +59,17 @@ export function Layout() {
         </div>
       </aside>
 
-      <main className="flex-1 p-6 overflow-auto">
+      <main className="flex-1 p-3 pb-24 md:p-6 md:pb-6 overflow-x-hidden overflow-y-auto min-w-0">
         <Outlet />
       </main>
+
+      <MobileBottomNav onMore={() => setMoreOpen(true)} moreActive={moreActive || moreOpen} />
+      <MobileMoreSheet
+        open={moreOpen}
+        username={username}
+        onClose={() => setMoreOpen(false)}
+        onLogout={handleLogout}
+      />
     </div>
   );
 }

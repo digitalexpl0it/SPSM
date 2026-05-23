@@ -13,6 +13,28 @@ SUNSET_RAMP_HOURS_BEFORE_END = 3
 # Skip “no production” alerts while the array is still waking up after dawn.
 SUNRISE_RAMP_HOURS_AFTER_START = 3
 
+# Extra morning ramp hours by calendar month when health_sunrise_ramp_smart is enabled.
+_SMART_SUNRISE_RAMP_BY_MONTH: dict[int, int] = {
+    1: 4,
+    2: 4,
+    3: 3,
+    4: 3,
+    5: 2,
+    6: 2,
+    7: 2,
+    8: 2,
+    9: 3,
+    10: 3,
+    11: 4,
+    12: 4,
+}
+
+
+def sunrise_ramp_hours(settings: dict[str, str] | None, local_month: int) -> int:
+    if settings and settings.get("health_sunrise_ramp_smart", "false").lower() == "true":
+        return _SMART_SUNRISE_RAMP_BY_MONTH.get(local_month, SUNRISE_RAMP_HOURS_AFTER_START)
+    return SUNRISE_RAMP_HOURS_AFTER_START
+
 
 def resolve_timezone(raw: str | None) -> ZoneInfo:
     name = (raw or "").strip() or DEFAULT_TIMEZONE
@@ -45,13 +67,19 @@ def is_daylight_local(tz_name: str | None, now: datetime | None = None) -> bool:
     return DAYLIGHT_START_HOUR <= h < DAYLIGHT_END_HOUR
 
 
-def is_sunrise_ramp_local(tz_name: str | None, now: datetime | None = None) -> bool:
+def is_sunrise_ramp_local(
+    tz_name: str | None,
+    now: datetime | None = None,
+    settings: dict[str, str] | None = None,
+) -> bool:
     """Early daylight hours when near-zero PV is normal as the sun comes up."""
     now = now or datetime.now(UTC)
     if now.tzinfo is None:
         now = now.replace(tzinfo=UTC)
-    h = now.astimezone(resolve_timezone(tz_name)).hour
-    ramp_end = DAYLIGHT_START_HOUR + SUNRISE_RAMP_HOURS_AFTER_START
+    local = now.astimezone(resolve_timezone(tz_name))
+    h = local.hour
+    ramp_hours = sunrise_ramp_hours(settings, local.month)
+    ramp_end = DAYLIGHT_START_HOUR + ramp_hours
     return DAYLIGHT_START_HOUR <= h < ramp_end
 
 

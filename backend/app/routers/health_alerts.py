@@ -1,17 +1,16 @@
 from datetime import UTC, datetime, timedelta
 from typing import Annotated, Any
 
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, Field
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.auth import get_current_user
+from app.auth import get_current_user, require_admin, require_write_access
 from app.database import get_db
 from app.health_rules import RULE_CATALOG, catalog_for_api, default_health_rule_keys
 from app.health_runner import run_health_with_persistence
 from app.settings_store import get_all_settings
-from app.routers.users import require_admin
 from app.json_util import sanitize_for_json
 from app.models import HealthEvent, User
 
@@ -33,10 +32,9 @@ class HealthRulesSave(BaseModel):
 
 @router.get("/rules")
 async def health_rules(
-    user: Annotated[User, Depends(get_current_user)],
+    _: Annotated[User, Depends(require_admin)],
     db: Annotated[AsyncSession, Depends(get_db)],
 ):
-    require_admin(user)
     settings = await get_all_settings(db)
     return {"rules": catalog_for_api(settings)}
 
@@ -44,10 +42,10 @@ async def health_rules(
 @router.put("/rules")
 async def save_health_rules(
     body: HealthRulesSave,
-    user: Annotated[User, Depends(get_current_user)],
+    _: Annotated[User, Depends(require_admin)],
+    __: Annotated[User, Depends(require_write_access)],
     db: Annotated[AsyncSession, Depends(get_db)],
 ):
-    require_admin(user)
     allowed = _allowed_health_setting_keys()
     from app.settings_store import set_setting
 
@@ -57,6 +55,8 @@ async def save_health_rules(
         if key.startswith("health_rule_"):
             enabled = raw is True or str(raw).lower() in ("true", "1", "yes")
             await set_setting(db, key, "true" if enabled else "false")
+        elif isinstance(raw, bool):
+            await set_setting(db, key, "true" if raw else "false")
         else:
             await set_setting(db, key, str(raw))
     await db.commit()
@@ -100,7 +100,25 @@ async def health_history(
                 "last_seen": r.last_seen.isoformat(),
                 "resolved_at": r.resolved_at.isoformat() if r.resolved_at else None,
                 "active": r.active,
+                "acknowledged_at": r.acknowledged_at.isoformat() if r.acknowledged_at else None,
+                "acknowledged_by": r.acknowledged_by,
             }
             for r in rows
         ]
     )
+
+
+@router.post("/history/{event_id}/ack")
+async def acknowledge_health_event(
+    event_id: int,
+    user: Annotated[User, Depends(require_write_access)],
+    db: Annotated[AsyncSession, Depends(get_db)],
+):
+    ev = await db.get(HealthEvent, event_id)
+    if not ev:
+        raise HTTPException(status_code=404, detail="Event not found")
+    now = datetime.now(UTC)
+    ev.acknowledged_at = now
+    ev.acknowledged_by = user.id
+    await db.commit()
+    return {"ok": True, "id": ev.id, "acknowledged_at": now.isoformat()}
