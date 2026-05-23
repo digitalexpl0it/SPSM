@@ -78,7 +78,7 @@ Tested with PVS6 firmware **BUILD 61840+** (e.g. 61846). Older firmware may use 
 
 - Docker and Docker Compose
 - SunPower PVS6 on the same LAN as the host running SPSM
-- PVS reachable on **HTTPS port 443**
+- PVS reachable on LAN
 - Serial number from the SunPower app (**System Info**)
 
 ### PVS authentication
