@@ -20,6 +20,9 @@ services:
     build: ./backend
     ports:
       - "8000:8000"
+    # Use your router/LAN DNS so DHCP hostnames resolve (see LAN_DNS in .env.example).
+    dns:
+      - ${LAN_DNS:-192.168.0.1}
     environment:
       DATABASE_URL: postgresql+asyncpg://spsm:spsm_dev_change_me@db:5432/spsm
       SECRET_KEY: ${SECRET_KEY:-change-me-in-production-use-openssl-rand-hex-32}
@@ -35,6 +38,8 @@ services:
 
   collector:
     build: ./backend
+    dns:
+      - ${LAN_DNS:-192.168.0.1}
     environment:
       DATABASE_URL: postgresql+asyncpg://spsm:spsm_dev_change_me@db:5432/spsm
     depends_on:

@@ -124,11 +124,54 @@ PostgreSQL runs **inside Docker only** (no host port `5432` by default), so it w
 
 ### Rebuild after code changes
 
+See **[Updating an existing install](#updating-an-existing-install)** for the full `git pull` workflow. Quick rebuild:
+
 ```bash
 docker compose up -d --build
 ```
 
-For day-to-day dev, mounted volumes hot-reload the API and Vite frontend without rebuilding images.
+For day-to-day dev on a running stack, mounted volumes hot-reload the API and Vite frontend without rebuilding images.
+
+## Updating an existing install
+
+If you already cloned the repo and run SPSM with Docker, updating to the latest code is:
+
+```bash
+cd SPSM
+git pull
+```
+
+1. **Check for new environment variables** — compare `.env.example` with your `.env` and add any new keys (your existing values are kept). Recent examples: `LAN_DNS` (router IP for LAN hostname lookup in Docker), `PORTAL_PUBLIC_URL`, `CORS_ALLOW_PRIVATE_NETWORKS`.
+2. **Rebuild and restart** — required when dependencies or Dockerfiles change; safe to run after every pull:
+
+```bash
+docker compose up -d --build
+```
+
+3. **Confirm services are healthy:**
+
+```bash
+docker compose ps
+docker compose logs -f api --tail 50
+```
+
+Your **database, settings, readings, and users are kept** in the Docker volume (`pgdata`). Pulling and rebuilding does not wipe history unless you remove volumes (`docker compose down -v` — do not use `-v` for a normal update).
+
+**After some upgrades** you may need a one-time rollup backfill (see [Backfill chart rollups](#backfill-chart-rollups)). Watch the repo release notes or commit messages for one-off commands.
+
+**If you changed `docker-compose.yml`** (ports, `LAN_DNS`, CORS, etc.), the same `docker compose up -d --build` applies. Set `LAN_DNS` in `.env` to your router/gateway IP (e.g. `192.168.0.1`) if LAN PVS discovery hostnames do not resolve inside the container.
+
+**If the UI looks stale** after an update, hard-refresh the browser (Ctrl+Shift+R) or reopen the tab. The Vite dev server in the `web` container serves the latest frontend after rebuild.
+
+**If `git pull` reports local changes**, stash or commit your edits first, or reset only files you did not mean to customize:
+
+```bash
+git stash
+git pull
+git stash pop   # optional — restore local edits
+```
+
+Custom `.env` is not tracked by git; it is never overwritten by `git pull`.
 
 ## PVS network setup
 
@@ -168,6 +211,7 @@ curl -sk -b /tmp/pvs.txt "https://$PVS_IP/vars?match=livedata&fmt=obj" | head
 | `PORTAL_PUBLIC_URL` | Optional env override for email links (same as above; used if UI value is empty) |
 | `CORS_ORIGINS` | Allowed browser origins for the API when using a separate API host |
 | `CORS_ALLOW_PRIVATE_NETWORKS` | Docker default `true` — allows `192.168.x.x` / `10.x` UI origins (phones on LAN) |
+| `LAN_DNS` | Router/gateway IP for LAN DNS inside Docker (e.g. `192.168.0.1`) — used by PVS LAN discovery for hostnames |
 
 Settings are stored in the database and editable from the UI.
 

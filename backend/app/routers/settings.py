@@ -92,6 +92,10 @@ class TestConnectionRequest(BaseModel):
     pvs_verify_ssl: bool = False
 
 
+class DiscoverPvsRequest(BaseModel):
+    seed_host: str | None = Field(None, max_length=128)
+
+
 @router.get("")
 async def get_settings(
     _: Annotated[User, Depends(get_current_user)],
@@ -283,15 +287,16 @@ async def test_monthly_report(
 
 @router.post("/discover-pvs")
 async def discover_pvs(
-    _: Annotated[User, Depends(require_admin)],
+    _: Annotated[User, Depends(get_current_user)],
     db: Annotated[AsyncSession, Depends(get_db)],
+    body: DiscoverPvsRequest | None = None,
 ):
     settings = await get_all_settings(db)
-    host = (settings.get("pvs_host") or "").strip()
+    host = ((body.seed_host if body else None) or settings.get("pvs_host") or "").strip()
     if not host:
         raise HTTPException(
             status_code=400,
-            detail="Set a PVS host IP in settings first (used as the /24 scan seed).",
+            detail="Enter a LAN IP or hostname first (used as the /24 scan seed).",
         )
     hosts = await scan_pvs_subnet(host)
     return {"ok": True, "seed_host": host, "hosts": hosts}

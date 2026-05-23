@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { Loader2, Radar, Search, X } from "lucide-react";
-import { settingsApi, type PvsDiscoveryHost } from "../lib/api";
+import { settingsApi, pvsHostFromDiscovery, type PvsDiscoveryHost } from "../lib/api";
 import { formatErrorMessage, useToast } from "../lib/toast";
 
 type LanModalProps = {
@@ -24,22 +24,29 @@ function HostResult({
     <li className="rounded-lg border border-surface/80 px-3 py-3 space-y-2">
       <div className="flex flex-wrap items-start justify-between gap-2">
         <div className="min-w-0">
-          <p className="mono text-cyan-glow font-medium">{host.ip}</p>
-          {host.hostname && (
-            <p className="text-xs text-mist truncate mt-0.5" title={host.hostname}>
-              {host.hostname}
+          <p className="mono text-cyan-glow font-medium">{host.hostname ?? host.ip}</p>
+          {host.hostname && <p className="text-xs text-mist mt-0.5 mono">{host.ip}</p>}
+          {host.hostname && host.hostname_fqdn && host.hostname !== host.hostname_fqdn && (
+            <p className="text-xs text-mist/70 truncate mt-0.5" title={host.hostname_fqdn}>
+              {host.hostname_fqdn}
             </p>
           )}
         </div>
-        <span className="text-xs text-mist shrink-0">
-          HTTP {host.status}
-          {host.serial ? ` · ${host.serial}` : ""}
+        <span className="text-xs text-mist shrink-0 text-right">
+          {(host.scheme ?? "https").toUpperCase()} {host.status}
+          {host.likely_pvs && (
+            <span className="block text-purple-300/90">PVS API</span>
+          )}
+          {host.pvs_api_status != null && host.pvs_api_status !== host.status && (
+            <span className="block text-mist/80">/vars {host.pvs_api_status}</span>
+          )}
+          {host.serial ? <span className="block">{host.serial}</span> : null}
         </span>
       </div>
       <div className="flex flex-wrap gap-2">
         <button
           type="button"
-          onClick={() => onPickHost(host.ip)}
+          onClick={() => onPickHost(pvsHostFromDiscovery(host))}
           className="px-3 py-1.5 rounded-lg border border-cyan/30 text-cyan-glow text-xs hover:bg-cyan/10 transition"
         >
           Use as host
@@ -76,10 +83,10 @@ export function PvsLanDiscoveryModal({
     setScanLoading(true);
     setScanned(false);
     try {
-      const res = await settingsApi.discoverPvs();
+      const res = await settingsApi.discoverPvs(seedHost.trim());
       setHosts(res.hosts);
       setScanned(true);
-      showToast("success", `Found ${res.hosts.length} HTTPS host(s) on ${res.seed_host}/24.`);
+      showToast("success", `Found ${res.hosts.length} device(s) on ${res.seed_host}/24.`);
     } catch (e) {
       showToast("error", formatErrorMessage(e));
     } finally {
@@ -125,7 +132,8 @@ export function PvsLanDiscoveryModal({
               </h2>
               <p className="text-xs text-mist mt-1">
                 Scans the /24 subnet around{" "}
-                <span className="mono text-cyan-glow/80">{seedHost || "your PVS host"}</span>. May
+                <span className="mono text-cyan-glow/80">{seedHost || "your LAN IP"}</span> over
+                HTTP and HTTPS. Hostnames come from your router&apos;s local DNS when available. May
                 take up to a minute.
               </p>
             </div>
@@ -159,7 +167,10 @@ export function PvsLanDiscoveryModal({
           </button>
 
           {!seedHost.trim() && (
-            <p className="text-xs text-amber-400/90">Enter a PVS host IP first (used as scan seed).</p>
+            <p className="text-xs text-amber-400/90">
+              Enter any IP on your LAN first (e.g. your router at 192.168.1.1) — used as the scan
+              seed.
+            </p>
           )}
         </div>
 
@@ -167,7 +178,7 @@ export function PvsLanDiscoveryModal({
           <div className="flex-1 min-h-0 overflow-y-auto px-6 pb-6 pt-0 border-t border-surface/60">
             {scanned && hosts.length === 0 && (
               <p className="text-sm text-mist text-center py-4">
-                No HTTPS devices found on this subnet.
+                No HTTP/HTTPS devices found on this subnet.
               </p>
             )}
 

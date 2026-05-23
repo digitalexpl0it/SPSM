@@ -89,10 +89,13 @@ export const settingsApi = {
       method: "POST",
       body: body ? JSON.stringify(body) : undefined,
     }),
-  discoverPvs: () =>
+  discoverPvs: (seedHost?: string) =>
     api<{ ok: boolean; seed_host: string; hosts: PvsDiscoveryHost[] }>(
       "/api/settings/discover-pvs",
-      { method: "POST" }
+      {
+        method: "POST",
+        body: JSON.stringify(seedHost ? { seed_host: seedHost } : {}),
+      }
     ),
   testMonthlyReport: () =>
     api<{ ok: boolean; message: string }>("/api/settings/test-monthly-report", {
@@ -212,9 +215,18 @@ export interface InverterSeriesPoint {
 
 export interface PvsDiscoveryHost {
   ip: string;
+  scheme?: "http" | "https";
   status: number;
+  root_status?: number | null;
+  pvs_api_status?: number | null;
+  likely_pvs?: boolean;
   serial: string | null;
   hostname?: string | null;
+  hostname_fqdn?: string | null;
+}
+
+export function pvsHostFromDiscovery(host: PvsDiscoveryHost): string {
+  return host.scheme === "http" ? `http://${host.ip}` : host.ip;
 }
 
 export interface ApiTokenItem {
