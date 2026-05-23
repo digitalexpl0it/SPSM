@@ -1,11 +1,11 @@
 import { useState } from "react";
 import { Loader2, Radar, Search, X } from "lucide-react";
 import { settingsApi, pvsHostFromDiscovery, type PvsDiscoveryHost } from "../lib/api";
+import { effectiveDiscoverySerial } from "../lib/pvsSerial";
 import { formatErrorMessage, useToast } from "../lib/toast";
 
 type LanModalProps = {
   open: boolean;
-  seedHost: string;
   onClose: () => void;
   onSelectHost: (ip: string) => void;
   onSelectSerial: (serial: string) => void;
@@ -13,13 +13,12 @@ type LanModalProps = {
 
 function HostResult({
   host,
-  onPickHost,
-  onPickSerial,
+  onSelect,
 }: {
   host: PvsDiscoveryHost;
-  onPickHost: (ip: string) => void;
-  onPickSerial: (serial: string) => void;
+  onSelect: (host: PvsDiscoveryHost) => void;
 }) {
+  const serial = effectiveDiscoverySerial(host);
   return (
     <li className="rounded-lg border border-surface/80 px-3 py-3 space-y-2">
       <div className="flex flex-wrap items-start justify-between gap-2">
@@ -40,34 +39,22 @@ function HostResult({
           {host.pvs_api_status != null && host.pvs_api_status !== host.status && (
             <span className="block text-mist/80">/vars {host.pvs_api_status}</span>
           )}
-          {host.serial ? <span className="block">{host.serial}</span> : null}
+          {serial ? <span className="block">{serial}</span> : null}
         </span>
       </div>
-      <div className="flex flex-wrap gap-2">
-        <button
-          type="button"
-          onClick={() => onPickHost(pvsHostFromDiscovery(host))}
-          className="px-3 py-1.5 rounded-lg border border-cyan/30 text-cyan-glow text-xs hover:bg-cyan/10 transition"
-        >
-          Use as host
-        </button>
-        {host.serial && (
-          <button
-            type="button"
-            onClick={() => onPickSerial(host.serial!)}
-            className="px-3 py-1.5 rounded-lg border border-purple-500/30 text-purple-300 text-xs hover:bg-purple-500/10 transition"
-          >
-            Use serial
-          </button>
-        )}
-      </div>
+      <button
+        type="button"
+        onClick={() => onSelect(host)}
+        className="w-full px-3 py-2 rounded-lg border border-cyan/30 text-cyan-glow text-xs hover:bg-cyan/10 transition text-center"
+      >
+        {serial ? "Use this PVS" : "Use as host"}
+      </button>
     </li>
   );
 }
 
 export function PvsLanDiscoveryModal({
   open,
-  seedHost,
   onClose,
   onSelectHost,
   onSelectSerial,
@@ -76,6 +63,7 @@ export function PvsLanDiscoveryModal({
   const [scanLoading, setScanLoading] = useState(false);
   const [hosts, setHosts] = useState<PvsDiscoveryHost[]>([]);
   const [scanned, setScanned] = useState(false);
+  const [subnet, setSubnet] = useState<string | null>(null);
 
   if (!open) return null;
 
@@ -83,10 +71,14 @@ export function PvsLanDiscoveryModal({
     setScanLoading(true);
     setScanned(false);
     try {
-      const res = await settingsApi.discoverPvs(seedHost.trim());
+      const res = await settingsApi.discoverPvs();
       setHosts(res.hosts);
+      setSubnet(res.subnet);
       setScanned(true);
-      showToast("success", `Found ${res.hosts.length} device(s) on ${res.seed_host}/24.`);
+      showToast(
+        "success",
+        `Found ${res.hosts.length} PVS candidate(s) on ${res.subnet}.`
+      );
     } catch (e) {
       showToast("error", formatErrorMessage(e));
     } finally {
@@ -94,16 +86,20 @@ export function PvsLanDiscoveryModal({
     }
   };
 
-  const pickHost = (ip: string) => {
-    onSelectHost(ip);
+  const selectHost = (host: PvsDiscoveryHost) => {
+    const hostValue = pvsHostFromDiscovery(host);
+    const serial = effectiveDiscoverySerial(host);
+    onSelectHost(hostValue);
+    if (serial) {
+      onSelectSerial(serial);
+    }
     onClose();
-    showToast("success", `PVS host set to ${ip} — save settings to apply.`);
-  };
-
-  const pickSerial = (serial: string) => {
-    onSelectSerial(serial);
-    onClose();
-    showToast("success", "Serial applied — save settings to apply.");
+    showToast(
+      "success",
+      serial
+        ? `PVS host and serial applied (${hostValue}, ${serial}) — save to apply.`
+        : `PVS host set to ${hostValue} — save settings to apply.`
+    );
   };
 
   return (
@@ -131,10 +127,16 @@ export function PvsLanDiscoveryModal({
                 LAN PVS discovery
               </h2>
               <p className="text-xs text-mist mt-1">
-                Scans the /24 subnet around{" "}
-                <span className="mono text-cyan-glow/80">{seedHost || "your LAN IP"}</span> over
-                HTTP and HTTPS. Hostnames come from your router&apos;s local DNS when available. May
-                take up to a minute.
+                Scans the subnet of this server&apos;s assigned LAN address
+                {subnet ? (
+                  <>
+                    {" "}
+                    (<span className="mono text-cyan-glow/80">{subnet}</span>)
+                  </>
+                ) : (
+                  " (detected from network interfaces)"
+                )}
+                . Usually finishes in under a minute.
               </p>
             </div>
             <button
@@ -150,7 +152,7 @@ export function PvsLanDiscoveryModal({
           <button
             type="button"
             onClick={scan}
-            disabled={scanLoading || !seedHost.trim()}
+            disabled={scanLoading}
             className="flex items-center justify-center gap-2 w-full px-4 py-3 rounded-xl border border-cyan/30 text-cyan-glow hover:bg-cyan/10 min-h-[2.75rem] disabled:opacity-50"
           >
             {scanLoading ? (
@@ -165,32 +167,20 @@ export function PvsLanDiscoveryModal({
               </>
             )}
           </button>
-
-          {!seedHost.trim() && (
-            <p className="text-xs text-amber-400/90">
-              Enter any IP on your LAN first (e.g. your router at 192.168.1.1) — used as the scan
-              seed.
-            </p>
-          )}
         </div>
 
         {(scanned || hosts.length > 0) && (
           <div className="flex-1 min-h-0 overflow-y-auto px-6 pb-6 pt-0 border-t border-surface/60">
             {scanned && hosts.length === 0 && (
               <p className="text-sm text-mist text-center py-4">
-                No HTTP/HTTPS devices found on this subnet.
+                No SunPower PVS devices found on this subnet.
               </p>
             )}
 
             {hosts.length > 0 && (
               <ul className="text-sm space-y-2 pt-4">
                 {hosts.map((h) => (
-                  <HostResult
-                    key={h.ip}
-                    host={h}
-                    onPickHost={pickHost}
-                    onPickSerial={pickSerial}
-                  />
+                  <HostResult key={h.ip} host={h} onSelect={selectHost} />
                 ))}
               </ul>
             )}

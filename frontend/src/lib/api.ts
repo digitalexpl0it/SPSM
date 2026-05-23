@@ -89,13 +89,10 @@ export const settingsApi = {
       method: "POST",
       body: body ? JSON.stringify(body) : undefined,
     }),
-  discoverPvs: (seedHost?: string) =>
-    api<{ ok: boolean; seed_host: string; hosts: PvsDiscoveryHost[] }>(
+  discoverPvs: () =>
+    api<{ ok: boolean; seed_host: string; subnet: string; hosts: PvsDiscoveryHost[] }>(
       "/api/settings/discover-pvs",
-      {
-        method: "POST",
-        body: JSON.stringify(seedHost ? { seed_host: seedHost } : {}),
-      }
+      { method: "POST", body: "{}" }
     ),
   testMonthlyReport: () =>
     api<{ ok: boolean; message: string }>("/api/settings/test-monthly-report", {

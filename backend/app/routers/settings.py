@@ -5,6 +5,7 @@ from pydantic import BaseModel, Field
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.auth import get_current_user, require_admin, require_write_access
+from app.config import settings as app_config
 from app.network_discovery import scan_pvs_subnet
 from app.database import get_db
 from app.models import User
@@ -291,12 +292,14 @@ async def discover_pvs(
     db: Annotated[AsyncSession, Depends(get_db)],
     body: DiscoverPvsRequest | None = None,
 ):
-    settings = await get_all_settings(db)
-    host = ((body.seed_host if body else None) or settings.get("pvs_host") or "").strip()
-    if not host:
-        raise HTTPException(
-            status_code=400,
-            detail="Enter a LAN IP or hostname first (used as the /24 scan seed).",
-        )
-    hosts = await scan_pvs_subnet(host)
-    return {"ok": True, "seed_host": host, "hosts": hosts}
+    explicit_seed = (body.seed_host if body and body.seed_host else "").strip()
+    try:
+        result = await scan_pvs_subnet(explicit_seed or None)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e)) from e
+    return {
+        "ok": True,
+        "seed_host": result["seed_host"],
+        "subnet": result["subnet"],
+        "hosts": result["hosts"],
+    }

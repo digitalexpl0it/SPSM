@@ -73,8 +73,8 @@ export function SetupWizard() {
               onChange={(e) => setHost(e.target.value)}
             />
             <p className="text-xs text-mist mt-1">
-              Don&apos;t know the address? Enter any IP on your LAN (e.g. your router) and use Scan
-              LAN.
+              Don&apos;t know the address? Use <strong className="text-cyan-glow/90">Scan LAN</strong>{" "}
+              to search this server&apos;s subnet — no IP needed first.
             </p>
           </div>
           <div>
@@ -99,8 +99,7 @@ export function SetupWizard() {
             <button
               type="button"
               onClick={() => setLanScanOpen(true)}
-              disabled={!host.trim()}
-              className="flex items-center justify-center gap-2 px-4 py-2 rounded-xl border border-purple-500/30 text-purple-300 hover:bg-purple-500/10 transition text-sm disabled:opacity-50"
+              className="flex items-center justify-center gap-2 px-4 py-2 rounded-xl border border-purple-500/30 text-purple-300 hover:bg-purple-500/10 transition text-sm"
             >
               <Radar className="w-4 h-4" />
               Scan LAN
@@ -126,7 +125,6 @@ export function SetupWizard() {
 
       <PvsLanDiscoveryModal
         open={lanScanOpen}
-        seedHost={host}
         onClose={() => setLanScanOpen(false)}
         onSelectHost={setHost}
         onSelectSerial={(s) => setSerial(s.toUpperCase())}

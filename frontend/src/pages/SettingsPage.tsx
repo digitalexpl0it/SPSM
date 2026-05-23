@@ -454,7 +454,6 @@ export function SettingsPage() {
                   <button
                     type="button"
                     onClick={() => setLanScanOpen(true)}
-                    disabled={!form.pvs_host.trim()}
                     className="flex items-center gap-2 px-4 py-2 rounded-xl border border-purple-500/30 text-purple-300 hover:bg-purple-500/10 transition text-sm"
                   >
                     <Radar className="w-4 h-4" />
@@ -970,7 +969,6 @@ export function SettingsPage() {
           {isAdmin && (
             <PvsLanDiscoveryModal
               open={lanScanOpen}
-              seedHost={form.pvs_host}
               onClose={() => setLanScanOpen(false)}
               onSelectHost={(ip) => setForm((f) => ({ ...f, pvs_host: ip }))}
               onSelectSerial={(serial) =>

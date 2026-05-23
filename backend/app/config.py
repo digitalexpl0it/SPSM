@@ -9,6 +9,7 @@ class Settings(BaseSettings):
     cors_origins: str = "http://localhost:5173"
     cors_allow_private_networks: bool = False
     portal_public_url: str = ""
+    lan_dns: str = ""
     access_token_expire_minutes: int = 60 * 24 * 7  # 7 days
 
     @property
