@@ -337,6 +337,25 @@ export interface HealthAlert {
   detail?: string | null;
 }
 
+export interface HealthDiagnostics {
+  poll_interval_seconds: number;
+  collector_enabled: boolean;
+  pvs_login_ms: number | null;
+  readings_last_24h: number;
+  inverter_count: number;
+  last_reading_age_seconds: number | null;
+  flash_free_mb: number | null;
+  flash_used_pct: number | null;
+  flash_wear_pct: number | null;
+  battery_enabled: boolean;
+  battery_poll_recommended_seconds: number | null;
+}
+
+export interface HealthHint {
+  id: string;
+  message: string;
+}
+
 export interface HealthResponse {
   checked_at: string;
   pvs_connected: boolean;
@@ -345,6 +364,8 @@ export interface HealthResponse {
   temp_config?: { unit: "c" | "f"; warning: number; critical: number };
   alerts: HealthAlert[];
   ok: string[];
+  hints?: HealthHint[];
+  diagnostics?: HealthDiagnostics;
   summary: "healthy" | "critical" | "warning" | "info";
 }
 
@@ -450,6 +471,7 @@ export interface LiveResponse {
   battery_enabled?: boolean;
   livedata?: Reading;
   telemetry?: Record<string, unknown>;
+  hints?: HealthHint[];
 }
 
 export interface DeviceSnapshot {

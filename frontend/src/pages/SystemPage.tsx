@@ -1,9 +1,20 @@
 import { useCallback, useEffect, useState } from "react";
-import { Activity, AlertTriangle, ChevronDown, HardDrive, Loader2, RefreshCw, Wifi } from "lucide-react";
+import {
+  Activity,
+  AlertTriangle,
+  Battery,
+  ChevronDown,
+  HardDrive,
+  Info,
+  Loader2,
+  RefreshCw,
+  Wifi,
+} from "lucide-react";
 import { Pvs6Unit } from "../components/Pvs6Unit";
 import { SolarThrobber } from "../components/SolarThrobber";
 import { dataApi, settingsApi } from "../lib/api";
 import { formatChartDateTime } from "../lib/formatChartDateTime";
+import { formatEssRows, livedataBatteryRows } from "../lib/essFormat";
 import { getSiteTimezone } from "../lib/siteSettings";
 import { isSnapshotRecent } from "../lib/snapshotStale";
 
@@ -89,6 +100,14 @@ export function SystemPage() {
   const [refreshError, setRefreshError] = useState<string | null>(null);
   const [firmwareNoticeText, setFirmwareNoticeText] = useState<string | null>(null);
   const [pvsModelSetting, setPvsModelSetting] = useState("");
+  const [batteryEnabled, setBatteryEnabled] = useState(false);
+  const [ess, setEss] = useState<Record<string, unknown>>({});
+  const [batteryLive, setBatteryLive] = useState<{
+    battery_soc?: number | null;
+    battery_kw?: number | null;
+    backup_minutes?: number | null;
+    mid_state?: number | null;
+  }>({});
   const [siteTz, setSiteTz] = useState<string | undefined>();
 
   const applyTelemetry = useCallback(
@@ -102,15 +121,18 @@ export function SystemPage() {
   );
 
   const loadCached = useCallback(async () => {
-    const [settings, systemSnaps, meterSnaps] = await Promise.all([
+    const [settings, systemSnaps, meterSnaps, essSnaps, latestReading] = await Promise.all([
       settingsApi.get(),
       dataApi.devices("system"),
       dataApi.devices("meters"),
+      dataApi.devices("ess"),
+      dataApi.latest(),
     ]);
 
     setSiteTz(getSiteTimezone(settings));
     setFirmwareNoticeText(firmwareNotice(settings));
     setPvsModelSetting(settings.pvs_model || "");
+    setBatteryEnabled(settings.battery_enabled === "true");
     setSiteMeta({
       site_name: settings.site_name || "",
       site_id: settings.site_id || "",
@@ -120,7 +142,18 @@ export function SystemPage() {
 
     const sys = systemSnaps[0];
     const met = meterSnaps[0];
+    const essSnap = essSnaps[0];
     const ts = latestSnapshotTs(sys?.ts ?? null, met?.ts ?? null);
+
+    setEss((essSnap?.payload || {}) as Record<string, unknown>);
+    if (latestReading) {
+      setBatteryLive({
+        battery_soc: latestReading.battery_soc,
+        battery_kw: latestReading.battery_kw,
+        backup_minutes: latestReading.backup_minutes,
+        mid_state: latestReading.mid_state,
+      });
+    }
 
     applyTelemetry(
       {
@@ -145,6 +178,18 @@ export function SystemPage() {
         return;
       }
       applyTelemetry(res.telemetry, res.ts ?? new Date().toISOString(), "live");
+      if (res.telemetry?.ess) {
+        setEss(res.telemetry.ess as Record<string, unknown>);
+      }
+      const ld = res.livedata as Record<string, unknown> | undefined;
+      if (ld) {
+        setBatteryLive({
+          battery_soc: ld.battery_soc as number | null | undefined,
+          battery_kw: ld.battery_kw as number | null | undefined,
+          backup_minutes: ld.backup_minutes as number | null | undefined,
+          mid_state: ld.mid_state as number | null | undefined,
+        });
+      }
     } catch (e) {
       setConnected(false);
       setRefreshError(e instanceof Error ? e.message : "Refresh failed");
@@ -170,6 +215,12 @@ export function SystemPage() {
     siteMeta.pvs_host && ["PVS host", siteMeta.pvs_host],
   ].filter(Boolean) as [string, string][];
   const allRows = [...rows, ...metaRows.filter(([label]) => !rows.some(([r]) => r === label))];
+  const essRows = formatEssRows(ess);
+  const liveBatteryRows = livedataBatteryRows(batteryLive);
+  const batteryRows =
+    liveBatteryRows.length > 0
+      ? liveBatteryRows
+      : essRows.slice(0, 12);
 
   const updatedLabel = snapshotAt
     ? formatChartDateTime(snapshotAt, siteTz)
@@ -260,6 +311,67 @@ export function SystemPage() {
               </dl>
             )}
           </div>
+
+          {batteryEnabled && (
+            <div className="card-glow p-6 space-y-4">
+              <h2 className="text-sm text-mist mb-2 flex items-center gap-2">
+                <Battery className="w-4 h-4 text-emerald-400" />
+                Battery / SunVault (read-only)
+              </h2>
+              <p className="text-xs text-mist">
+                Monitoring only — change operating mode or reserve in the SunPower / SunStrong app.
+                SPSM does not control the battery yet.
+              </p>
+              {batteryLive.battery_soc != null && (
+                <div className="flex items-center gap-3 py-2">
+                  <div className="relative w-10 h-16 rounded-md border-2 border-emerald-500/50 bg-void/80 overflow-hidden">
+                    <div
+                      className="absolute bottom-0 left-0 right-0 bg-emerald-500/70 transition-all"
+                      style={{
+                        height: `${Math.min(100, Math.max(0, batteryLive.battery_soc))}%`,
+                      }}
+                    />
+                  </div>
+                  <span className="text-2xl font-mono text-emerald-300">
+                    {batteryLive.battery_soc.toFixed(0)}%
+                  </span>
+                  <span className="text-xs text-mist">state of charge</span>
+                </div>
+              )}
+              {batteryRows.length > 0 ? (
+                <dl className="grid gap-2 sm:grid-cols-2">
+                  {batteryRows.map(([label, value]) => (
+                    <div
+                      key={label}
+                      className="flex justify-between gap-4 py-2 border-b border-surface/50"
+                    >
+                      <dt className="text-xs text-mist truncate">{label}</dt>
+                      <dd className="text-sm text-cyan-glow font-mono text-right break-all">
+                        {value}
+                      </dd>
+                    </div>
+                  ))}
+                </dl>
+              ) : (
+                <p className="text-sm text-mist flex items-start gap-2">
+                  <Info className="w-4 h-4 shrink-0 mt-0.5" />
+                  No ESS data in the last collector snapshot. Confirm battery monitoring is on in
+                  Settings and wait for the next poll.
+                </p>
+              )}
+              {essRows.length > 12 && (
+                <details className="group">
+                  <summary className="text-xs text-cyan-glow/80 cursor-pointer list-none flex items-center gap-1">
+                    All ESS fields
+                    <ChevronDown className="w-3 h-3 transition-transform group-open:rotate-180" />
+                  </summary>
+                  <pre className="mt-2 text-xs text-mist overflow-auto max-h-64 mono rounded-lg bg-void/60 border border-cyan/10 p-3">
+                    {JSON.stringify(ess, null, 2)}
+                  </pre>
+                </details>
+              )}
+            </div>
+          )}
 
           {Object.keys(meters).length > 0 && (
             <details className="card-glow p-6 group">

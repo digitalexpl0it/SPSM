@@ -4,6 +4,7 @@ import {
   Battery,
   Gauge,
   Home,
+  Info,
   PlugZap,
   Sun,
   TrendingUp,
@@ -215,6 +216,17 @@ export function DashboardPage() {
             ))}
           </div>
         </header>
+
+        {live?.hints && live.hints.length > 0 && (
+          <div className="card-glow p-4 border border-amber-500/25 bg-amber-500/5">
+            {live.hints.map((h) => (
+              <p key={h.id} className="text-sm text-amber-200/90 flex items-start gap-2">
+                <Info className="w-4 h-4 shrink-0 mt-0.5 text-amber-400" />
+                {h.message}
+              </p>
+            ))}
+          </div>
+        )}
 
         <div className="flex flex-col lg:flex-row gap-4 lg:gap-6 items-start">
           <div className="grid grid-cols-2 gap-3 lg:contents shrink-0">

@@ -5,23 +5,22 @@ import type { Reading } from "../lib/api";
 const HOUSE_IMG_DAY = "/images/solar-house.webp";
 const HOUSE_IMG_NIGHT = "/images/solar-house-night.png";
 
-/** Horizontal layout: Solar — Home — Grid (same row). */
+/** Horizontal layout: Solar — Home (+ battery below) — Grid. */
 const POS = {
   solar: { x: 18, y: 46 },
-  home: { x: 50, y: 46 },
+  home: { x: 50, y: 44 },
   grid: { x: 82, y: 46 },
-  battery: { x: 50, y: 78 },
 } as const;
 
 /** viewBox units = CSS % on the stage (SVG stretched to fill, no letterboxing). */
-const VB = { w: 100, h: 50 } as const;
+const VB = { w: 100, h: 52 } as const;
 const SVG_VIEW = `0 0 ${VB.w} ${VB.h}`;
 
 /** Horizontal connectors at icon row height (y 23 ≈ 46% node row). */
 const LINES = {
   solarHome: { x1: 24, y1: 23, x2: 37, y2: 23 },
   homeGrid: { x1: 63, y1: 23, x2: 76, y2: 23 },
-  homeBattery: { x1: 50, y1: 28, x2: 50, y2: 36 },
+  homeBattery: { x1: 50, y1: 27, x2: 50, y2: 42 },
 } as const;
 
 const STROKE = { active: 2, idle: 1.25 } as const;
@@ -120,8 +119,12 @@ export function EnergyFlowDiagram({ data, connected, hasBattery = false, large =
     ? "h-24 sm:h-28 w-auto object-contain drop-shadow-[0_0_24px_rgba(34,211,238,0.3)]"
     : "h-20 sm:h-24 w-auto object-contain drop-shadow-[0_0_24px_rgba(34,211,238,0.25)]";
   const stageCls = large
-    ? "relative w-full aspect-[2/1] min-h-[200px] max-h-[240px]"
-    : "relative w-full max-w-2xl mx-auto aspect-[2/1] min-h-[220px]";
+    ? hasBattery
+      ? "relative w-full aspect-[2/1] min-h-[260px] max-h-[300px]"
+      : "relative w-full aspect-[2/1] min-h-[200px] max-h-[240px]"
+    : hasBattery
+      ? "relative w-full max-w-2xl mx-auto aspect-[2/1] min-h-[280px]"
+      : "relative w-full max-w-2xl mx-auto aspect-[2/1] min-h-[220px]";
 
   const [isNight, setIsNight] = useState(() => isNightHour(new Date().getHours()));
 
@@ -226,12 +229,9 @@ export function EnergyFlowDiagram({ data, connected, hasBattery = false, large =
           {isNight && <span className="text-[9px] text-mist/80 -mt-0.5">Night</span>}
         </FlowNode>
 
-        <FlowNode
-          z={10}
-          style={pct(POS.home.x, POS.home.y)}
-          label="Home"
-          value={kw(load)}
-          valueClass="text-cyan-glow"
+        <div
+          className="absolute flex flex-col items-center -translate-x-1/2 -translate-y-1/2"
+          style={{ ...pct(POS.home.x, POS.home.y), zIndex: 10 }}
         >
           <div className="relative flex flex-col items-center">
             <img
@@ -243,7 +243,30 @@ export function EnergyFlowDiagram({ data, connected, hasBattery = false, large =
               <span className="absolute -bottom-1 left-1/2 -translate-x-1/2 w-2 h-2 rounded-full bg-cyan-400 animate-throb shadow-glow-cyan" />
             )}
           </div>
-        </FlowNode>
+          <span className="text-[10px] text-mist uppercase tracking-wider whitespace-nowrap mt-1">
+            Home
+          </span>
+          <span className="text-sm font-mono font-semibold whitespace-nowrap text-cyan-glow">
+            {kw(load)}
+          </span>
+          {hasBattery && (
+            <div className="mt-3 flex flex-col items-center gap-1">
+              <div
+                className={`${nodePad} rounded-2xl bg-surface border border-emerald-400/25 ${
+                  battLineActive ? "shadow-glow-cyan" : ""
+                }`}
+              >
+                <Battery className={`${iconCls} text-emerald-400`} />
+              </div>
+              <span className="text-[10px] text-mist uppercase tracking-wider whitespace-nowrap">
+                {charging ? "Charging" : discharging ? "Discharging" : "Battery"}
+              </span>
+              <span className="text-sm font-mono font-semibold whitespace-nowrap text-emerald-400">
+                {soc != null ? `${soc.toFixed(0)}% · ${kw(batt)}` : kw(batt)}
+              </span>
+            </div>
+          )}
+        </div>
 
         <FlowNode
           style={pct(POS.grid.x, POS.grid.y)}
@@ -265,23 +288,6 @@ export function EnergyFlowDiagram({ data, connected, hasBattery = false, large =
             />
           </div>
         </FlowNode>
-
-        {hasBattery && (
-          <FlowNode
-            style={pct(POS.battery.x, POS.battery.y)}
-            label={charging ? "Charging" : discharging ? "Discharging" : "Battery"}
-            value={soc != null ? `${soc.toFixed(0)}% · ${kw(batt)}` : kw(batt)}
-            valueClass="text-emerald-400"
-          >
-            <div
-              className={`${nodePad} rounded-2xl bg-surface border border-emerald-400/25 ${
-                battLineActive ? "shadow-glow-cyan" : ""
-              }`}
-            >
-              <Battery className={`${iconCls} text-emerald-400`} />
-            </div>
-          </FlowNode>
-        )}
       </div>
     </div>
   );

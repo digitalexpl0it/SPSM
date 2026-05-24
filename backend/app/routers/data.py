@@ -14,8 +14,9 @@ from app.database import get_db
 from app.models import DeviceSnapshot, Reading, ReadingRollup, User
 from app.json_util import sanitize_for_json, safe_float
 from app.pvs_client import PvsClient, parse_livedata
+from app.pvs_health_util import METER_HINTS, meter_data_status
 from app.settings_store import battery_enabled_from_settings, get_all_settings, site_timezone_from_settings
-from app.timezone_util import local_day_bounds
+from app.timezone_util import is_daylight_local
 
 router = APIRouter(prefix="/api/data", tags=["data"])
 
@@ -49,6 +50,40 @@ async def live_snapshot(
         telemetry = await client.fetch_all_telemetry(http, include_battery=include_battery)
 
     livedata = parse_livedata(telemetry.get("livedata", {}))
+
+    since = datetime.now(UTC) - timedelta(hours=2)
+    recent = await db.execute(
+        select(Reading).where(Reading.ts >= since).order_by(Reading.ts.asc())
+    )
+    recent_rows = list(recent.scalars().all())
+    tz = site_timezone_from_settings(settings)
+    daylight = is_daylight_local(tz, datetime.now(UTC)) if tz else True
+
+    meter_result = await db.execute(
+        select(DeviceSnapshot)
+        .where(DeviceSnapshot.category == "meters")
+        .order_by(DeviceSnapshot.ts.desc())
+        .limit(1)
+    )
+    meter_snap = meter_result.scalar_one_or_none()
+    meter_payload = (
+        meter_snap.payload if meter_snap and isinstance(meter_snap.payload, dict) else None
+    )
+    if not meter_payload and telemetry.get("meters"):
+        meter_payload = telemetry.get("meters")
+
+    hint_id = meter_data_status(
+        meter_payload=meter_payload if isinstance(meter_payload, dict) else None,
+        recent_load_values=[safe_float(r.load_kw) for r in recent_rows],
+        recent_pv_values=[safe_float(r.pv_kw) for r in recent_rows],
+        daylight=daylight,
+    )
+    hints = (
+        [{"id": hint_id, "message": METER_HINTS[hint_id]}]
+        if hint_id and hint_id in METER_HINTS
+        else []
+    )
+
     return sanitize_for_json(
         {
             "connected": True,
@@ -56,6 +91,7 @@ async def live_snapshot(
             "battery_enabled": include_battery,
             "livedata": {**livedata, "ts": datetime.now(UTC).isoformat()},
             "telemetry": telemetry,
+            "hints": hints,
         }
     )
 

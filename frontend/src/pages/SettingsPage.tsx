@@ -1008,8 +1008,13 @@ export function SettingsPage() {
                   Battery / SunVault
                 </h2>
                 <p className="text-sm text-mist">
-                  Turn on if your site has a SunVault or other ESS. Solar-only systems should leave
-                  this off to skip battery API calls and hide battery UI on the dashboard.
+                  Read-only monitoring for SunVault / ESS sites. Shows SOC and power on the
+                  dashboard and stores history when enabled. Operating mode and reserve percentage
+                  must still be changed in the SunPower app — SPSM does not control the battery yet.
+                </p>
+                <p className="text-xs text-mist/90">
+                  With a battery, use a poll interval of <strong className="text-cyan-glow/90">20 seconds or slower</strong>{" "}
+                  (Settings → System) to match SunStrong guidance and reduce load on the PVS.
                 </p>
                 <Toggle
                   checked={form.battery_enabled}

@@ -4,6 +4,7 @@ import {
   AlertTriangle,
   CheckCircle2,
   ChevronDown,
+  Gauge,
   HeartPulse,
   Info,
   Loader2,
@@ -61,6 +62,97 @@ function SummaryBadge({ summary }: { summary: HealthResponse["summary"] }) {
     <span className={`px-3 py-1 rounded-full text-sm font-medium border ${styles}`}>
       {summary === "healthy" ? "All clear" : summary.charAt(0).toUpperCase() + summary.slice(1)}
     </span>
+  );
+}
+
+function formatAge(seconds: number | null | undefined): string {
+  if (seconds == null) return "—";
+  if (seconds < 60) return `${Math.round(seconds)}s ago`;
+  if (seconds < 3600) return `${Math.round(seconds / 60)}m ago`;
+  return `${(seconds / 3600).toFixed(1)}h ago`;
+}
+
+function DiagnosticsCard({ diagnostics }: { diagnostics: NonNullable<HealthResponse["diagnostics"]> }) {
+  const pollNote =
+    diagnostics.battery_enabled &&
+    diagnostics.battery_poll_recommended_seconds != null &&
+    diagnostics.poll_interval_seconds < diagnostics.battery_poll_recommended_seconds
+      ? `Battery sites: consider poll interval ≥ ${diagnostics.battery_poll_recommended_seconds}s (currently ${diagnostics.poll_interval_seconds}s).`
+      : null;
+
+  return (
+    <div className="card-glow p-5 space-y-4">
+      <h2 className="text-sm font-medium text-cyan-glow/90 flex items-center gap-2">
+        <Gauge className="w-4 h-4" />
+        Portal diagnostics
+      </h2>
+      <dl className="grid gap-3 sm:grid-cols-2 text-sm">
+        <div className="flex justify-between gap-3 border-b border-surface/50 pb-2">
+          <dt className="text-mist">Collector</dt>
+          <dd className="text-cyan-glow font-mono text-right">
+            {diagnostics.collector_enabled ? "Enabled" : "Disabled"}
+          </dd>
+        </div>
+        <div className="flex justify-between gap-3 border-b border-surface/50 pb-2">
+          <dt className="text-mist">Poll interval</dt>
+          <dd className="text-cyan-glow font-mono text-right">{diagnostics.poll_interval_seconds}s</dd>
+        </div>
+        <div className="flex justify-between gap-3 border-b border-surface/50 pb-2">
+          <dt className="text-mist">Last reading</dt>
+          <dd className="text-cyan-glow font-mono text-right">
+            {formatAge(diagnostics.last_reading_age_seconds)}
+          </dd>
+        </div>
+        <div className="flex justify-between gap-3 border-b border-surface/50 pb-2">
+          <dt className="text-mist">Readings (24h)</dt>
+          <dd className="text-cyan-glow font-mono text-right">{diagnostics.readings_last_24h}</dd>
+        </div>
+        <div className="flex justify-between gap-3 border-b border-surface/50 pb-2">
+          <dt className="text-mist">PVS login test</dt>
+          <dd className="text-cyan-glow font-mono text-right">
+            {diagnostics.pvs_login_ms != null ? `${diagnostics.pvs_login_ms} ms` : "—"}
+          </dd>
+        </div>
+        <div className="flex justify-between gap-3 border-b border-surface/50 pb-2">
+          <dt className="text-mist">Inverters seen</dt>
+          <dd className="text-cyan-glow font-mono text-right">{diagnostics.inverter_count}</dd>
+        </div>
+        {diagnostics.flash_free_mb != null && (
+          <div className="flex justify-between gap-3 border-b border-surface/50 pb-2">
+            <dt className="text-mist">Flash free</dt>
+            <dd className="text-cyan-glow font-mono text-right">
+              {diagnostics.flash_free_mb.toFixed(0)} MB
+            </dd>
+          </div>
+        )}
+        {diagnostics.flash_used_pct != null && diagnostics.flash_free_mb == null && (
+          <div className="flex justify-between gap-3 border-b border-surface/50 pb-2">
+            <dt className="text-mist">Flash used</dt>
+            <dd className="text-cyan-glow font-mono text-right">
+              {diagnostics.flash_used_pct.toFixed(0)}%
+            </dd>
+          </div>
+        )}
+        {diagnostics.flash_wear_pct != null && (
+          <div className="flex justify-between gap-3 border-b border-surface/50 pb-2">
+            <dt className="text-mist">eMMC wear</dt>
+            <dd className="text-cyan-glow font-mono text-right">
+              {diagnostics.flash_wear_pct.toFixed(0)}%
+            </dd>
+          </div>
+        )}
+      </dl>
+      {pollNote && (
+        <p className="text-xs text-amber-300/90 flex items-start gap-2">
+          <AlertTriangle className="w-3.5 h-3.5 shrink-0 mt-0.5" />
+          {pollNote}
+        </p>
+      )}
+      <p className="text-xs text-mist">
+        Updated each time you open this page or click Re-run checks. For external monitoring, see{" "}
+        <code className="text-cyan/80">GET /metrics</code> (Prometheus).
+      </p>
+    </div>
   );
 }
 
@@ -174,6 +266,19 @@ export function HealthPage() {
             </div>
           </div>
 
+          {data.hints && data.hints.length > 0 && (
+            <div className="card-glow p-4 border border-amber-500/25 bg-amber-500/5">
+              {data.hints.map((h) => (
+                <p key={h.id} className="text-sm text-amber-200/90 flex items-start gap-2">
+                  <Info className="w-4 h-4 shrink-0 mt-0.5 text-amber-400" />
+                  {h.message}
+                </p>
+              ))}
+            </div>
+          )}
+
+          {data.diagnostics && <DiagnosticsCard diagnostics={data.diagnostics} />}
+
           <details className="card-glow p-5 group">
             <summary className="text-sm font-medium text-cyan-glow/90 flex items-center gap-2 cursor-pointer select-none list-none [&::-webkit-details-marker]:hidden">
               <Info className="w-4 h-4 shrink-0" />
@@ -211,6 +316,8 @@ export function HealthPage() {
               </li>
               <li>Non-zero MID / transfer switch state</li>
               <li>Fault / alarm / error fields in latest inverter or system snapshots</li>
+              <li>PVS flash storage low (free MB threshold, optional)</li>
+              <li>PVS eMMC flash wear high (% threshold, default 90%)</li>
             </ul>
           </details>
 

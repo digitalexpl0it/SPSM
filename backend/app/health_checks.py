@@ -9,7 +9,7 @@ from datetime import UTC, datetime, timedelta
 from typing import Any, Literal
 
 import httpx
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.json_util import safe_float
@@ -18,9 +18,16 @@ from app.pvs_client import PvsClient
 from app.health_rules import (
     daylight_zero_pv_kw,
     daylight_zero_pv_minutes,
+    flash_free_mb_min,
+    flash_wear_pct_max,
     gap_minutes_from_settings,
     production_drop_ratio,
     rule_enabled_by_id,
+)
+from app.pvs_health_util import (
+    METER_HINTS,
+    flash_metrics_from_system,
+    meter_data_status,
 )
 from app.settings_store import site_timezone_from_settings, temp_config_from_settings
 from app.timezone_util import is_daylight_local, is_sunrise_ramp_local, is_sunset_ramp_local
@@ -99,21 +106,26 @@ def _inv_label(path: str, fields: dict[str, Any]) -> str:
     return f"Inverter {m[-1]}" if m else path
 
 
-async def _pvs_login_ok(settings: dict[str, str]) -> tuple[bool, str]:
+async def _pvs_login_ok(settings: dict[str, str]) -> tuple[bool, str, float | None]:
     host = (settings.get("pvs_host") or "").strip()
     serial = (settings.get("pvs_serial") or "").strip()
     if not host or not serial:
-        return False, "PVS not configured in Settings"
+        return False, "PVS not configured in Settings", None
     verify = settings.get("pvs_verify_ssl", "false").lower() == "true"
     client = PvsClient(host=host, serial=serial, verify_ssl=verify)
     try:
+        import time
+
+        t0 = time.perf_counter()
         async with httpx.AsyncClient(verify=verify, timeout=10.0) as http:
-            if await client.login(http):
-                return True, ""
-            return False, "Authentication failed — check IP and serial"
+            ok = await client.login(http)
+        ms = (time.perf_counter() - t0) * 1000
+        if ok:
+            return True, "", round(ms, 1)
+        return False, "Authentication failed — check IP and serial", round(ms, 1)
     except httpx.HTTPError as e:
         logger.debug("PVS health ping failed: %s", e)
-        return False, f"Cannot reach PVS at {host}"
+        return False, f"Cannot reach PVS at {host}", None
 
 
 async def evaluate_site_health(
@@ -143,7 +155,7 @@ async def evaluate_site_health(
     latest: Reading | None = result.scalar_one_or_none()
 
     # --- PVS reachability (live ping) ---
-    pvs_ok, pvs_err = await _pvs_login_ok(settings)
+    pvs_ok, pvs_err, pvs_login_ms = await _pvs_login_ok(settings)
     if not pvs_ok and rule_enabled_by_id(settings, "pvs_offline"):
         alerts.append(
             HealthAlert(
@@ -397,7 +409,7 @@ async def evaluate_site_health(
                     )
                 )
 
-    # --- System snapshot fault scan ---
+    # --- System snapshot fault scan + flash metrics ---
     sys_result = await db.execute(
         select(DeviceSnapshot)
         .where(DeviceSnapshot.category == "system")
@@ -405,6 +417,48 @@ async def evaluate_site_health(
         .limit(1)
     )
     sys_snap = sys_result.scalar_one_or_none()
+    flash_metrics = flash_metrics_from_system(
+        sys_snap.payload if sys_snap and isinstance(sys_snap.payload, dict) else None
+    )
+
+    free_min = flash_free_mb_min(settings)
+    if (
+        rule_enabled_by_id(settings, "flash_storage_low")
+        and free_min > 0
+        and flash_metrics["flash_free_mb"] is not None
+        and flash_metrics["flash_free_mb"] < free_min
+    ):
+        alerts.append(
+            HealthAlert(
+                id="flash_storage_low",
+                severity="critical",
+                title="PVS flash storage low",
+                message=(
+                    f"Free flash storage is {flash_metrics['flash_free_mb']:.0f} MB "
+                    f"(threshold {free_min} MB)."
+                ),
+                detail="Low storage can affect PVS logging and stability. Contact SunPower support if this persists.",
+            )
+        )
+
+    wear_max = flash_wear_pct_max(settings)
+    wear = flash_metrics["flash_wear_pct"]
+    if (
+        rule_enabled_by_id(settings, "flash_wear_high")
+        and wear_max > 0
+        and wear is not None
+        and wear >= wear_max
+    ):
+        alerts.append(
+            HealthAlert(
+                id="flash_wear_high",
+                severity="warning",
+                title="PVS eMMC flash wear high",
+                message=f"Flash wear is {wear:.0f}% (threshold {wear_max}%).",
+                detail="High eMMC wear is normal on older units but worth monitoring.",
+            )
+        )
+
     if (
         sys_snap
         and isinstance(sys_snap.payload, dict)
@@ -429,6 +483,65 @@ async def evaluate_site_health(
     if not alerts and pvs_ok:
         ok_items.append("No issues detected by current health rules")
 
+    # --- CT / meter hints (informational, not alerts) ---
+    hints: list[dict[str, str]] = []
+    meter_result = await db.execute(
+        select(DeviceSnapshot)
+        .where(DeviceSnapshot.category == "meters")
+        .order_by(DeviceSnapshot.ts.desc())
+        .limit(1)
+    )
+    meter_snap = meter_result.scalar_one_or_none()
+    meter_payload = (
+        meter_snap.payload if meter_snap and isinstance(meter_snap.payload, dict) else None
+    )
+    hint_id = meter_data_status(
+        meter_payload=meter_payload,
+        recent_load_values=[safe_float(r.load_kw) for r in recent_rows[-30:]],
+        recent_pv_values=[safe_float(r.pv_kw) for r in recent_rows[-30:]],
+        daylight=_is_daylight(now, settings),
+    )
+    if hint_id and hint_id in METER_HINTS:
+        hints.append({"id": hint_id, "message": METER_HINTS[hint_id]})
+
+    # --- Diagnostics ---
+    since_24h = now - timedelta(hours=24)
+    count_result = await db.execute(
+        select(func.count()).select_from(Reading).where(Reading.ts >= since_24h)
+    )
+    readings_24h = int(count_result.scalar() or 0)
+
+    inv_result = await db.execute(
+        select(DeviceSnapshot)
+        .where(DeviceSnapshot.category == "inverters")
+        .order_by(DeviceSnapshot.ts.desc())
+        .limit(1)
+    )
+    inv_snap = inv_result.scalar_one_or_none()
+    inverter_count = 0
+    if inv_snap and isinstance(inv_snap.payload, dict):
+        inverter_count = len(inv_snap.payload)
+
+    reading_age_s: float | None = None
+    if latest:
+        latest_ts = latest.ts if latest.ts.tzinfo else latest.ts.replace(tzinfo=UTC)
+        reading_age_s = (now - latest_ts).total_seconds()
+
+    battery_on = settings.get("battery_enabled", "false").lower() == "true"
+    diagnostics: dict[str, Any] = {
+        "poll_interval_seconds": poll_s,
+        "collector_enabled": collector_on,
+        "pvs_login_ms": pvs_login_ms,
+        "readings_last_24h": readings_24h,
+        "inverter_count": inverter_count,
+        "last_reading_age_seconds": round(reading_age_s, 1) if reading_age_s is not None else None,
+        "flash_free_mb": flash_metrics["flash_free_mb"],
+        "flash_used_pct": flash_metrics["flash_used_pct"],
+        "flash_wear_pct": flash_metrics["flash_wear_pct"],
+        "battery_enabled": battery_on,
+        "battery_poll_recommended_seconds": 20 if battery_on else None,
+    }
+
     order = {"critical": 0, "warning": 1, "info": 2}
     alerts.sort(key=lambda a: order[a.severity])
 
@@ -449,6 +562,8 @@ async def evaluate_site_health(
             },
             "alerts": [a.to_dict() for a in alerts],
             "ok": ok_items,
+            "hints": hints,
+            "diagnostics": diagnostics,
             "summary": _summary(alerts),
         }
     )

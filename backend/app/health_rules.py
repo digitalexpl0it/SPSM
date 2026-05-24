@@ -125,6 +125,42 @@ RULE_CATALOG: list[dict[str, Any]] = [
         "description": "Non-zero fault, alarm, or error keys in supervisor snapshot.",
         "tunables": [],
     },
+    {
+        "id": "flash_storage_low",
+        "setting_key": "health_rule_flash_storage_low",
+        "severity": "critical",
+        "title": "PVS flash storage low",
+        "description": "Supervisor reports free flash storage below the threshold (MB).",
+        "tunables": [
+            {
+                "key": "health_flash_free_mb_min",
+                "label": "Alert when free below (MB, 0 = off)",
+                "type": "int",
+                "min": 0,
+                "max": 500,
+                "default": 0,
+                "help": "ha-esunpower recommends 30–50 MB for early warning.",
+            },
+        ],
+    },
+    {
+        "id": "flash_wear_high",
+        "setting_key": "health_rule_flash_wear_high",
+        "severity": "warning",
+        "title": "PVS eMMC flash wear high",
+        "description": "eMMC lifetime wear at or above the threshold (%).",
+        "tunables": [
+            {
+                "key": "health_flash_wear_pct_max",
+                "label": "Alert when wear at or above (%, 0 = off)",
+                "type": "int",
+                "min": 0,
+                "max": 100,
+                "default": 90,
+                "help": "Set to 0 to disable. 85–95% is typical.",
+            },
+        ],
+    },
 ]
 
 
@@ -187,6 +223,14 @@ def production_drop_ratio(settings: dict[str, str]) -> float:
     return pct / 100.0
 
 
+def flash_free_mb_min(settings: dict[str, str]) -> int:
+    return int_setting(settings, "health_flash_free_mb_min", 0, min_v=0, max_v=500)
+
+
+def flash_wear_pct_max(settings: dict[str, str]) -> int:
+    return int_setting(settings, "health_flash_wear_pct_max", 90, min_v=0, max_v=100)
+
+
 def catalog_for_api(settings: dict[str, str]) -> list[dict[str, Any]]:
     out: list[dict[str, Any]] = []
     for rule in RULE_CATALOG:
@@ -221,4 +265,6 @@ def default_health_rule_keys() -> dict[str, str]:
     keys["health_production_drop_ratio_pct"] = "45"
     keys["health_no_data_gap_minutes"] = "0"
     keys["health_sunrise_ramp_smart"] = "false"
+    keys["health_flash_free_mb_min"] = "0"
+    keys["health_flash_wear_pct_max"] = "90"
     return keys
