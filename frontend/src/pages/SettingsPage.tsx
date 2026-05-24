@@ -1,6 +1,7 @@
 import { useEffect, useState, type FormEvent } from "react";
 import { useSearchParams } from "react-router-dom";
 import {
+  AlertTriangle,
   Battery,
   Cpu,
   Globe,
@@ -41,10 +42,15 @@ import { PvsLanDiscoveryModal } from "../components/PvsLanDiscoveryModal";
 import { PvsVarserverExplorer } from "../components/PvsVarserverExplorer";
 import { SolarThrobber } from "../components/SolarThrobber";
 import { Toggle } from "../components/Toggle";
-import { settingsApi } from "../lib/api";
+import { settingsApi, type PvsFirmwareInfo } from "../lib/api";
 import { useAuth } from "../lib/auth";
 import { notifyTestPayload } from "../lib/notifyForm";
 import { formatErrorMessage, useToast } from "../lib/toast";
+import {
+  buildSettingsUpdatePayload,
+  savedSettingsMatchPayload,
+} from "../lib/settingsSave";
+import { isNetworkError } from "../lib/apiBase";
 import {
   NEM_PLAN_OPTIONS,
   parseNemPlan,
@@ -115,6 +121,8 @@ export function SettingsPage() {
     pvs_host: "",
     pvs_serial: "",
     pvs_verify_ssl: false,
+    pvs_model: "",
+    pvs_firmware_build: "",
     poll_interval_seconds: 60,
     site_name: "",
     site_id: "",
@@ -169,6 +177,8 @@ export function SettingsPage() {
   const [testingNotify, setTestingNotify] = useState(false);
   const [testingMonthlyReport, setTestingMonthlyReport] = useState(false);
   const [lanScanOpen, setLanScanOpen] = useState(false);
+  const [testFirmware, setTestFirmware] = useState<PvsFirmwareInfo | null>(null);
+  const [testMessage, setTestMessage] = useState("");
 
   useEffect(() => {
     settingsApi
@@ -183,6 +193,8 @@ export function SettingsPage() {
           pvs_host: s.pvs_host || "",
           pvs_serial: s.pvs_serial || "",
           pvs_verify_ssl: s.pvs_verify_ssl === "true",
+          pvs_model: s.pvs_model || "",
+          pvs_firmware_build: s.pvs_firmware_build || "",
           poll_interval_seconds: parseInt(s.poll_interval_seconds || "60", 10),
           site_name: s.site_name || "",
           site_id: s.site_id || "",
@@ -255,14 +267,28 @@ export function SettingsPage() {
 
   const testConnection = async () => {
     setTesting(true);
+    setTestFirmware(null);
+    setTestMessage("");
     try {
       const res = await settingsApi.testPvs(
         form.pvs_host,
         form.pvs_serial,
         form.pvs_verify_ssl
       );
+      setTestFirmware(res.firmware ?? null);
+      setTestMessage(res.message);
+      if (res.firmware?.model || res.firmware?.build != null) {
+        setForm((f) => ({
+          ...f,
+          pvs_model: res.firmware?.model || f.pvs_model,
+          pvs_firmware_build:
+            res.firmware?.build != null ? String(res.firmware.build) : f.pvs_firmware_build,
+        }));
+      }
       showToast("success", res.message);
     } catch (e) {
+      setTestFirmware(null);
+      setTestMessage(formatErrorMessage(e));
       showToast("error", formatErrorMessage(e));
     } finally {
       setTesting(false);
@@ -304,30 +330,29 @@ export function SettingsPage() {
       return;
     }
     setSaving(true);
+    const payload = buildSettingsUpdatePayload(form);
     try {
-      const {
-        inverter_gauge_auto,
-        inverter_gauge_max_w,
-        temp_threshold_auto,
-        temp_warning,
-        temp_critical,
-        ...rest
-      } = form;
-      const portalUrl =
-        form.portal_public_url.trim() ||
-        (typeof window !== "undefined" ? window.location.origin : "");
-      await settingsApi.update({
-        ...rest,
-        portal_public_url: portalUrl,
-        inverter_gauge_max_w: inverter_gauge_auto ? 0 : inverter_gauge_max_w,
-        temp_warning: temp_threshold_auto ? 0 : temp_warning,
-        temp_critical: temp_threshold_auto ? 0 : temp_critical,
-        setup_complete: true,
-      });
+      await settingsApi.update(payload);
       clearSiteSettingsCache();
-      await refreshStatus();
+      void refreshStatus();
       showToast("success", "Settings saved. Collector will use these on the next poll.");
     } catch (e) {
+      if (isNetworkError(e)) {
+        try {
+          const saved = await settingsApi.get();
+          if (savedSettingsMatchPayload(saved, payload)) {
+            clearSiteSettingsCache();
+            void refreshStatus();
+            showToast(
+              "success",
+              "Settings saved. The connection dropped before confirmation finished — your changes are on the server."
+            );
+            return;
+          }
+        } catch {
+          /* fall through to error toast */
+        }
+      }
       showToast("error", formatErrorMessage(e));
     } finally {
       setSaving(false);
@@ -391,7 +416,11 @@ export function SettingsPage() {
                   className="input-dark mono"
                   placeholder="192.168.1.x"
                   value={form.pvs_host}
-                  onChange={(e) => setForm({ ...form, pvs_host: e.target.value })}
+                  onChange={(e) => {
+                    setForm({ ...form, pvs_host: e.target.value });
+                    setTestFirmware(null);
+                    setTestMessage("");
+                  }}
                   required
                 />
                 <p className="text-xs text-mist mt-1">
@@ -416,7 +445,11 @@ export function SettingsPage() {
                   className="input-dark mono"
                   placeholder={EXAMPLE_PVS_SERIAL}
                   value={form.pvs_serial}
-                  onChange={(e) => setForm({ ...form, pvs_serial: e.target.value.toUpperCase() })}
+                  onChange={(e) => {
+                    setForm({ ...form, pvs_serial: e.target.value.toUpperCase() });
+                    setTestFirmware(null);
+                    setTestMessage("");
+                  }}
                   required
                 />
                 <p className="text-xs text-mist mt-1">
@@ -461,6 +494,27 @@ export function SettingsPage() {
                   </button>
                 )}
               </div>
+              {testMessage && testFirmware && (
+                <p
+                  className={`text-sm flex items-start gap-2 ${
+                    testFirmware.status === "experimental" || testFirmware.status === "unknown"
+                      ? "text-amber-400"
+                      : "text-emerald-400"
+                  }`}
+                >
+                  {testFirmware.status === "experimental" || testFirmware.status === "unknown" ? (
+                    <AlertTriangle className="w-4 h-4 shrink-0 mt-0.5" />
+                  ) : null}
+                  <span>
+                    {testMessage}
+                    {testFirmware.model && testFirmware.build != null && (
+                      <span className="block text-xs text-mist mt-1">
+                        Detected {testFirmware.model} · BUILD {testFirmware.build}
+                      </span>
+                    )}
+                  </span>
+                </p>
+              )}
             </section>
 
               <section className="card-glow p-6 space-y-4">

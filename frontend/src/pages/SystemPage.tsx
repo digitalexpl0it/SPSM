@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
-import { Activity, ChevronDown, HardDrive, Loader2, RefreshCw, Wifi } from "lucide-react";
+import { Activity, AlertTriangle, ChevronDown, HardDrive, Loader2, RefreshCw, Wifi } from "lucide-react";
 import { Pvs6Unit } from "../components/Pvs6Unit";
 import { SolarThrobber } from "../components/SolarThrobber";
 import { dataApi, settingsApi } from "../lib/api";
@@ -41,6 +41,42 @@ function latestSnapshotTs(systemTs: string | null, metersTs: string | null): str
   return systemTs >= metersTs ? systemTs : metersTs;
 }
 
+const MIN_FIRMWARE_BUILD: Record<string, number> = {
+  PVS5: 5408,
+  PVS6: 61840,
+};
+
+function resolvePvsModel(
+  settings: Record<string, string>,
+  system: Record<string, unknown>
+): "PVS5" | "PVS6" {
+  const fromSettings = settings.pvs_model?.trim();
+  if (fromSettings?.toUpperCase().includes("PVS5")) return "PVS5";
+  if (fromSettings?.toUpperCase().includes("PVS6")) return "PVS6";
+  for (const key of ["/sys/info/model", "model"]) {
+    const raw = system[key];
+    if (typeof raw === "string") {
+      const upper = raw.toUpperCase();
+      if (upper.includes("PVS5")) return "PVS5";
+      if (upper.includes("PVS6")) return "PVS6";
+    }
+  }
+  return "PVS6";
+}
+
+function firmwareNotice(settings: Record<string, string>): string | null {
+  const model = settings.pvs_model?.trim();
+  const build = parseInt(settings.pvs_firmware_build || "", 10);
+  const min = model ? MIN_FIRMWARE_BUILD[model] : undefined;
+  if (model === "PVS5" && !Number.isNaN(build) && build >= (min ?? 5408)) {
+    return "PVS5 support is community-tested. If live data or charts look wrong, report an issue.";
+  }
+  if (min && !Number.isNaN(build) && build < min) {
+    return `${model} firmware BUILD ${build} is below the recommended minimum (BUILD ${min}+). Upgrade for reliable varserver monitoring.`;
+  }
+  return null;
+}
+
 export function SystemPage() {
   const [system, setSystem] = useState<Record<string, unknown>>({});
   const [meters, setMeters] = useState<Record<string, unknown>>({});
@@ -51,6 +87,8 @@ export function SystemPage() {
   const [snapshotAt, setSnapshotAt] = useState<string | null>(null);
   const [dataSource, setDataSource] = useState<"cached" | "live">("cached");
   const [refreshError, setRefreshError] = useState<string | null>(null);
+  const [firmwareNoticeText, setFirmwareNoticeText] = useState<string | null>(null);
+  const [pvsModelSetting, setPvsModelSetting] = useState("");
   const [siteTz, setSiteTz] = useState<string | undefined>();
 
   const applyTelemetry = useCallback(
@@ -71,6 +109,8 @@ export function SystemPage() {
     ]);
 
     setSiteTz(getSiteTimezone(settings));
+    setFirmwareNoticeText(firmwareNotice(settings));
+    setPvsModelSetting(settings.pvs_model || "");
     setSiteMeta({
       site_name: settings.site_name || "",
       site_id: settings.site_id || "",
@@ -122,6 +162,7 @@ export function SystemPage() {
   if (loading) return <SolarThrobber label="Loading system…" />;
 
   const rows = formatSystemRows(system);
+  const pvsModel = resolvePvsModel({ pvs_model: pvsModelSetting }, system);
   const metaRows = [
     siteMeta.site_name && ["Site name", siteMeta.site_name],
     siteMeta.site_id && ["Site ID", siteMeta.site_id],
@@ -173,9 +214,9 @@ export function SystemPage() {
 
       <div className="flex flex-col lg:flex-row gap-6 items-start">
         <div className="flex-shrink-0 flex flex-col items-center rounded-2xl bg-void/50 border border-cyan/10 p-6 lg:sticky lg:top-6">
-          <Pvs6Unit size="lg" connected={connected} />
+          <Pvs6Unit size="lg" model={pvsModel} connected={connected} />
           <p className="text-xs text-mist text-center mt-4 max-w-[160px]">
-            SunPower PVS6 monitoring unit
+            SunPower {pvsModel} monitoring unit
           </p>
           <p className="text-[10px] text-mist/80 mt-1 text-center">
             {connected
@@ -187,6 +228,12 @@ export function SystemPage() {
         </div>
 
         <div className="flex-1 min-w-0 space-y-6 w-full">
+          {firmwareNoticeText && (
+            <p className="text-sm text-amber-300/90 card-glow px-4 py-3 border border-amber-500/30 flex items-start gap-2">
+              <AlertTriangle className="w-4 h-4 shrink-0 mt-0.5" />
+              {firmwareNoticeText}
+            </p>
+          )}
           <div className="card-glow p-6">
             <h2 className="text-sm text-mist mb-4 flex items-center gap-2">
               <HardDrive className="w-4 h-4" />

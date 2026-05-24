@@ -1,6 +1,6 @@
 # SPSM — SunPower Solar Monitoring Portal
 
-**SPSM** is a self-hosted web portal for monitoring your **SunPower PVS6** system on your local network. It talks directly to the PVS varserver API—no SunPower cloud subscription required for live views and historical charts you store yourself.
+**SPSM** is a self-hosted web portal for monitoring your **SunPower PVS5 or PVS6** system on your local network. It talks directly to the PVS varserver API—no SunPower cloud subscription required for live views and historical charts you store yourself.
 
 > **Disclaimer:** SPSM is an independent hobby project. It is not affiliated with, endorsed by, or supported by SunPower or SunStrong Management.
 
@@ -48,7 +48,18 @@ Daily PV / load / import / export, summary cards, bar chart, year-over-year comp
 - **Setup wizard** — first-run flow when PVS is not configured
 - **Help** — in-app guide for every page and Settings tab
 
-Tested with PVS6 firmware **BUILD 61840+** (e.g. 61846). Older firmware may use different varserver paths.
+### Supported hardware
+
+| Model | Minimum BUILD | Notes |
+|-------|---------------|-------|
+| **PVS6** | **61840** | Primary target; tested in development |
+| **PVS5** | **5408** | Experimental — same varserver API, community-validated thresholds |
+
+SPSM requires **varserver** firmware (not legacy `dl_cgi`-only builds). On **Test connection**, the portal auto-detects model and firmware BUILD from `/sys/info/model` and `/sys/info/sw_rev`. Setup is blocked when BUILD is below the minimum for your model.
+
+Minimum BUILD thresholds align with the community [ha-esunpower](https://github.com/smcneece/ha-esunpower) Home Assistant integration.
+
+Tested with PVS6 firmware **BUILD 61840+** (e.g. 61846). PVS5 support is experimental and has not been verified on physical hardware in this project.
 
 ## Architecture
 
@@ -61,7 +72,7 @@ Tested with PVS6 firmware **BUILD 61840+** (e.g. 61846). Older firmware may use 
 
 ```
 ┌─────────┐     HTTPS      ┌──────────┐
-│  PVS6   │ ◄───────────── │ collector│
+│  PVS5/6 │ ◄───────────── │ collector│
 │ (local) │                │    + api │
 └─────────┘                └────┬─────┘
                                 │
@@ -77,7 +88,7 @@ Tested with PVS6 firmware **BUILD 61840+** (e.g. 61846). Older firmware may use 
 ## Requirements
 
 - Docker and Docker Compose
-- SunPower PVS6 on the same LAN as the host running SPSM
+- SunPower **PVS5 or PVS6** on the same LAN as the host running SPSM
 - PVS reachable on LAN
 - Serial number from the SunPower app (**System Info**)
 

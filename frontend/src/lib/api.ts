@@ -69,6 +69,24 @@ export const authApi = {
     api<{ username: string; is_admin: boolean; is_readonly: boolean }>("/api/auth/me"),
 };
 
+export type PvsFirmwareStatus = "supported" | "experimental" | "unsupported" | "unknown";
+
+export interface PvsFirmwareInfo {
+  status: PvsFirmwareStatus;
+  model: string | null;
+  build: number | null;
+  min_build: number | null;
+  sw_rev: string | null;
+  summary: string;
+}
+
+export interface TestPvsResponse {
+  ok: boolean;
+  message: string;
+  data: Record<string, string>;
+  firmware?: PvsFirmwareInfo;
+}
+
 export const settingsApi = {
   get: () => api<Record<string, string>>("/api/settings"),
   update: (data: Record<string, unknown>) =>
@@ -77,13 +95,10 @@ export const settingsApi = {
       body: JSON.stringify(data),
     }),
   testPvs: (pvs_host: string, pvs_serial: string, pvs_verify_ssl = false) =>
-    api<{ ok: boolean; message: string; data: Record<string, string> }>(
-      "/api/settings/test-pvs",
-      {
-        method: "POST",
-        body: JSON.stringify({ pvs_host, pvs_serial, pvs_verify_ssl }),
-      }
-    ),
+    api<TestPvsResponse>("/api/settings/test-pvs", {
+      method: "POST",
+      body: JSON.stringify({ pvs_host, pvs_serial, pvs_verify_ssl }),
+    }),
   testNotify: (body?: TestNotifyPayload) =>
     api<{ ok: boolean; message: string }>("/api/settings/test-notify", {
       method: "POST",

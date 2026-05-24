@@ -1,4 +1,14 @@
-const PVS6_SRC = "/images/pvs6-sideview.png";
+const PVS_IMAGES = {
+  PVS5: "/images/pvs5-sideview.png",
+  PVS6: "/images/pvs6-sideview.png",
+} as const;
+
+type PvsModel = keyof typeof PVS_IMAGES;
+
+function normalizeModel(model?: string): PvsModel {
+  if (model?.toUpperCase().includes("PVS5")) return "PVS5";
+  return "PVS6";
+}
 
 type Size = "sm" | "md" | "lg";
 
@@ -10,19 +20,23 @@ const sizes: Record<Size, { img: string; dot: string }> = {
 
 interface Props {
   size?: Size;
+  model?: string;
   connected?: boolean;
   className?: string;
   showLabel?: boolean;
 }
 
-/** SunPower PVS6 unit photo with optional live-status LED overlay. */
+/** SunPower PVS5/PVS6 unit photo with optional live-status LED overlay. */
 export function Pvs6Unit({
   size = "md",
+  model,
   connected,
   className = "",
   showLabel = false,
 }: Props) {
   const s = sizes[size];
+  const unitModel = normalizeModel(model);
+  const src = PVS_IMAGES[unitModel];
 
   return (
     <div className={`relative inline-flex flex-col items-center ${className}`}>
@@ -39,13 +53,13 @@ export function Pvs6Unit({
           />
         )}
         <img
-          src={PVS6_SRC}
-          alt="SunPower PVS6 monitoring unit"
+          src={src}
+          alt={`SunPower ${unitModel} monitoring unit`}
           className={`${s.img} object-contain drop-shadow-[0_8px_24px_rgba(34,211,238,0.25)]`}
         />
       </div>
       {showLabel && (
-        <span className="text-[10px] uppercase tracking-widest text-mist mt-1">PVS6</span>
+        <span className="text-[10px] uppercase tracking-widest text-mist mt-1">{unitModel}</span>
       )}
     </div>
   );

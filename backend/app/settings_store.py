@@ -10,6 +10,8 @@ KEYS = {
     "pvs_host": "",
     "pvs_serial": "",
     "pvs_verify_ssl": "false",
+    "pvs_model": "",
+    "pvs_firmware_build": "",
     "poll_interval_seconds": "60",
     "site_name": "",
     "site_id": "",

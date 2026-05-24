@@ -51,8 +51,15 @@ _cors_kwargs: dict = {
     "allow_headers": ["*"],
 }
 if settings.cors_allow_private_networks:
+    # Private LAN IPs plus hostnames (/etc/hosts, mDNS, .local) for mobile and desktop.
     _cors_kwargs["allow_origin_regex"] = (
-        r"https?://(localhost|127\.0\.0\.1|192\.168\.\d{1,3}\.\d{1,3}|10\.\d{1,3}\.\d{1,3}\.\d{1,3})(:\d+)?$"
+        r"https?://("
+        r"localhost|127\.0\.0\.1"
+        r"|192\.168\.\d{1,3}\.\d{1,3}"
+        r"|10\.\d{1,3}\.\d{1,3}\.\d{1,3}"
+        r"|172\.(?:1[6-9]|2\d|3[01])\.\d{1,3}\.\d{1,3}"
+        r"|[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?(?:\.[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?)*"
+        r")(:\d+)?$"
     )
 else:
     _cors_kwargs["allow_origins"] = settings.cors_origin_list

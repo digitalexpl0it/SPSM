@@ -1,7 +1,7 @@
 import type { PvsDiscoveryHost } from "./api";
 
-/** e.g. pvs6-ZT223485000549W1183 or pvs6-ZT223485000549W1183.localdomain */
-const PVS_HOSTNAME_SERIAL = /pvs6[-_]([A-Z0-9]{12,32})/i;
+/** e.g. pvs6-ZT223485000549W1183 or pvs5-ZT223485000549W1183.localdomain */
+const PVS_HOSTNAME_SERIAL = /pvs[56][-_]([A-Z0-9]{12,32})/i;
 
 export function serialFromHostname(name: string | null | undefined): string | null {
   if (!name?.trim()) return null;

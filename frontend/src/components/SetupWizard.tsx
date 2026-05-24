@@ -1,11 +1,16 @@
 import { useState } from "react";
-import { CheckCircle2, Loader2, Radar, Server } from "lucide-react";
+import { AlertTriangle, CheckCircle2, Loader2, Radar, Server } from "lucide-react";
 import { PvsLanDiscoveryModal } from "./PvsLanDiscoveryModal";
-import { settingsApi } from "../lib/api";
+import { settingsApi, type PvsFirmwareInfo } from "../lib/api";
 import { clearSiteSettingsCache } from "../lib/siteSettings";
 import { useAuth } from "../lib/auth";
 
 const EXAMPLE_PVS_SERIAL = "ZT223485000000W0000";
+
+function firmwareMessageClass(status: PvsFirmwareInfo["status"] | undefined): string {
+  if (status === "experimental" || status === "unknown") return "text-amber-400";
+  return "text-emerald-400";
+}
 
 export function SetupWizard() {
   const { refreshStatus } = useAuth();
@@ -14,16 +19,23 @@ export function SetupWizard() {
   const [testing, setTesting] = useState(false);
   const [saving, setSaving] = useState(false);
   const [testOk, setTestOk] = useState<boolean | null>(null);
+  const [firmware, setFirmware] = useState<PvsFirmwareInfo | null>(null);
   const [message, setMessage] = useState("");
   const [lanScanOpen, setLanScanOpen] = useState(false);
 
+  const resetTest = () => {
+    setTestOk(null);
+    setFirmware(null);
+    setMessage("");
+  };
+
   const test = async () => {
     setTesting(true);
-    setTestOk(null);
-    setMessage("");
+    resetTest();
     try {
       const res = await settingsApi.testPvs(host, serial.toUpperCase(), false);
       setTestOk(true);
+      setFirmware(res.firmware ?? null);
       setMessage(res.message);
     } catch (e) {
       setTestOk(false);
@@ -42,6 +54,8 @@ export function SetupWizard() {
         pvs_serial: serial.toUpperCase(),
         setup_complete: true,
         collector_enabled: true,
+        ...(firmware?.model ? { pvs_model: firmware.model } : {}),
+        ...(firmware?.build != null ? { pvs_firmware_build: String(firmware.build) } : {}),
       });
       clearSiteSettingsCache();
       await refreshStatus();
@@ -59,7 +73,8 @@ export function SetupWizard() {
           <Server className="w-12 h-12 text-cyan mx-auto mb-3" />
           <h1 className="text-xl font-bold text-gradient">Welcome to SPSM</h1>
           <p className="text-sm text-mist mt-2">
-            Connect your SunPower PVS6 on the local network to start monitoring.
+            Connect your SunPower PVS5 or PVS6 on the local network. Requires varserver firmware
+            (PVS6 BUILD 61840+, PVS5 BUILD 5408+).
           </p>
         </div>
 
@@ -70,7 +85,10 @@ export function SetupWizard() {
               className="input-dark mono w-full"
               placeholder="192.168.1.x or http://192.168.1.x"
               value={host}
-              onChange={(e) => setHost(e.target.value)}
+              onChange={(e) => {
+                setHost(e.target.value);
+                resetTest();
+              }}
             />
             <p className="text-xs text-mist mt-1">
               Don&apos;t know the address? Use <strong className="text-cyan-glow/90">Scan LAN</strong>{" "}
@@ -83,7 +101,10 @@ export function SetupWizard() {
               className="input-dark mono w-full"
               placeholder={EXAMPLE_PVS_SERIAL}
               value={serial}
-              onChange={(e) => setSerial(e.target.value.toUpperCase())}
+              onChange={(e) => {
+                setSerial(e.target.value.toUpperCase());
+                resetTest();
+              }}
             />
           </div>
           <div className="flex flex-wrap gap-2">
@@ -106,9 +127,25 @@ export function SetupWizard() {
             </button>
           </div>
           {testOk === true && (
-            <p className="text-sm text-emerald-400 flex items-center gap-2">
-              <CheckCircle2 className="w-4 h-4" />
-              {message}
+            <p
+              className={`text-sm flex items-start gap-2 ${firmwareMessageClass(firmware?.status)}`}
+            >
+              {firmware?.status === "experimental" || firmware?.status === "unknown" ? (
+                <AlertTriangle className="w-4 h-4 shrink-0 mt-0.5" />
+              ) : (
+                <CheckCircle2 className="w-4 h-4 shrink-0 mt-0.5" />
+              )}
+              <span>
+                {message}
+                {firmware?.model && firmware.build != null && (
+                  <span className="block text-xs text-mist mt-1">
+                    Detected {firmware.model} · BUILD {firmware.build}
+                    {firmware.status === "supported" && " · supported"}
+                    {firmware.status === "experimental" && " · experimental"}
+                    {firmware.status === "unknown" && " · version unverified"}
+                  </span>
+                )}
+              </span>
             </p>
           )}
           {testOk === false && <p className="text-sm text-red-400">{message}</p>}
@@ -126,8 +163,14 @@ export function SetupWizard() {
       <PvsLanDiscoveryModal
         open={lanScanOpen}
         onClose={() => setLanScanOpen(false)}
-        onSelectHost={setHost}
-        onSelectSerial={(s) => setSerial(s.toUpperCase())}
+        onSelectHost={(h) => {
+          setHost(h);
+          resetTest();
+        }}
+        onSelectSerial={(s) => {
+          setSerial(s.toUpperCase());
+          resetTest();
+        }}
       />
     </>
   );

@@ -12,6 +12,7 @@ from app.models import User
 from app.monthly_report import send_monthly_report_now
 from app.notifier import explain_notification_block, send_notification, smtp_ready_for_reports
 from app.pvs_client import PvsClient
+from app.pvs_firmware import assess_firmware, connection_message, livedata_ok
 from app.settings_store import get_all_settings, get_setting, is_setup_complete, set_setting
 from app.timezone_util import DEFAULT_TIMEZONE
 
@@ -22,6 +23,8 @@ class SettingsUpdate(BaseModel):
     pvs_host: str | None = None
     pvs_serial: str | None = None
     pvs_verify_ssl: bool | None = None
+    pvs_model: str | None = Field(None, max_length=8)
+    pvs_firmware_build: str | None = Field(None, max_length=16)
     poll_interval_seconds: int | None = Field(None, ge=10, le=3600)
     site_name: str | None = None
     site_id: str | None = None
@@ -215,7 +218,20 @@ async def test_pvs(
     ok, message, data = await client.test_connection()
     if not ok:
         raise HTTPException(status_code=400, detail=message)
-    return {"ok": True, "message": message, "data": data}
+    assessment = assess_firmware(
+        data,
+        livedata_ok=livedata_ok(data),
+        hostname=body.pvs_host,
+    )
+    firmware = assessment.to_dict()
+    if assessment.status == "unsupported":
+        raise HTTPException(status_code=400, detail=assessment.summary)
+    return {
+        "ok": True,
+        "message": connection_message(assessment),
+        "data": data,
+        "firmware": firmware,
+    }
 
 
 def _merge_notify_settings(
