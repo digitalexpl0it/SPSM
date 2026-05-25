@@ -16,7 +16,8 @@ from app.json_util import sanitize_for_json, safe_float
 from app.pvs_client import PvsClient, parse_livedata
 from app.pvs_health_util import METER_HINTS, meter_data_status
 from app.settings_store import battery_enabled_from_settings, get_all_settings, site_timezone_from_settings
-from app.timezone_util import is_daylight_local
+from app.report_period import today_energy_totals
+from app.timezone_util import is_daylight_local, local_day_bounds
 
 router = APIRouter(prefix="/api/data", tags=["data"])
 
@@ -300,58 +301,121 @@ async def export_device_snapshots(
     )
 
 
+async def _latest_reading(db: AsyncSession) -> Reading | None:
+    result = await db.execute(select(Reading).order_by(Reading.ts.desc()).limit(1))
+    return result.scalar_one_or_none()
+
+
+async def _reading_before(db: AsyncSession, ts: datetime) -> Reading | None:
+    result = await db.execute(
+        select(Reading).where(Reading.ts < ts).order_by(Reading.ts.desc()).limit(1)
+    )
+    return result.scalar_one_or_none()
+
+
+async def _reading_from_live(settings: dict[str, str]) -> Reading | None:
+    """Build a Reading-shaped snapshot from a live PVS poll (end-of-day endpoint)."""
+    host = settings.get("pvs_host", "").strip()
+    serial = settings.get("pvs_serial", "").strip()
+    if not host or not serial:
+        return None
+    import httpx
+
+    from app.settings_store import battery_enabled_from_settings
+
+    client = PvsClient(
+        host=host,
+        serial=serial,
+        verify_ssl=settings.get("pvs_verify_ssl", "false").lower() == "true",
+    )
+    ok, _, _ = await client.test_connection()
+    if not ok:
+        return None
+    include_battery = battery_enabled_from_settings(settings)
+    async with httpx.AsyncClient(verify=client.verify_ssl, timeout=30.0) as http:
+        telemetry = await client.fetch_all_telemetry(http, include_battery=include_battery)
+    parsed = parse_livedata(telemetry.get("livedata", {}))
+    now = datetime.now(UTC)
+    return Reading(
+        ts=now,
+        pv_kw=parsed.get("pv_kw"),
+        net_kw=parsed.get("net_kw"),
+        load_kw=parsed.get("load_kw"),
+        battery_kw=parsed.get("battery_kw"),
+        battery_soc=parsed.get("battery_soc"),
+        pv_kwh_total=parsed.get("pv_kwh_total"),
+        net_kwh_total=parsed.get("net_kwh_total"),
+        load_kwh_total=parsed.get("load_kwh_total"),
+        battery_kwh_total=parsed.get("battery_kwh_total"),
+        backup_minutes=parsed.get("backup_minutes"),
+        mid_state=parsed.get("mid_state"),
+    )
+
+
 @router.get("/summary")
 async def summary(
     _: Annotated[User, Depends(get_current_user)],
     db: Annotated[AsyncSession, Depends(get_db)],
 ):
     settings = await get_all_settings(db)
-    today_start, _ = local_day_bounds(site_timezone_from_settings(settings))
+    tz = site_timezone_from_settings(settings)
+    today_start, _ = local_day_bounds(tz)
     result = await db.execute(
         select(Reading)
         .where(Reading.ts >= today_start)
         .order_by(Reading.ts.asc())
     )
-    rows = result.scalars().all()
+    rows = list(result.scalars().all())
+    baseline = await _reading_before(db, today_start)
+    latest = await _latest_reading(db)
+
+    end: Reading | None = rows[-1] if rows else None
+    if end is None and latest is not None and latest.ts >= today_start:
+        end = latest
     if len(rows) < 2:
-        return {
-            "today_pv_kwh": 0,
-            "today_net_kwh": 0,
-            "today_export_kwh": 0,
-            "today_import_kwh": 0,
-            "today_load_kwh": 0,
-            "sample_count": len(rows),
-        }
+        live_end = await _reading_from_live(settings)
+        if live_end is not None:
+            end = live_end
 
-    first, last = rows[0], rows[-1]
+    totals = today_energy_totals(rows, baseline, end=end)
+    empty = {
+        "today_pv_kwh": 0,
+        "today_net_kwh": 0,
+        "today_export_kwh": 0,
+        "today_import_kwh": 0,
+        "today_load_kwh": 0,
+    }
+    payload: dict[str, Any] = {**empty, **(totals or {})}
 
-    def delta_nonneg(a: float | None, b: float | None) -> float:
-        """Cumulative totals that only increase (PV, load)."""
-        sa, sb = safe_float(a), safe_float(b)
-        if sa is None or sb is None:
-            return 0.0
-        return max(0.0, sb - sa)
+    current_row = end or latest
+    if current_row is not None:
+        payload["current"] = _reading_dict(current_row)
 
-    def delta_signed(a: float | None, b: float | None) -> float:
-        """Signed change (grid net: + = import, − = export)."""
-        sa, sb = safe_float(a), safe_float(b)
-        if sa is None or sb is None:
-            return 0.0
-        return sb - sa
+    last_sample_at = latest.ts.isoformat() if latest else None
+    collector_hint: str | None = None
+    if len(rows) == 0 and latest is None:
+        collector_hint = (
+            "No readings in this database. The collector must use the same "
+            "DATABASE_URL as this API (often a remote host)."
+        )
+    elif len(rows) == 0 and latest is not None:
+        collector_hint = (
+            "No samples yet today in the site timezone. Check site_timezone matches "
+            "your location, or wait for the next collector poll."
+        )
+    elif totals is None and len(rows) == 1:
+        collector_hint = (
+            "Only one sample today so far; totals need a second reading or a "
+            "baseline from before midnight."
+        )
 
-    net_delta = delta_signed(first.net_kwh_total, last.net_kwh_total)
     return sanitize_for_json(
         {
-            "today_pv_kwh": round(delta_nonneg(first.pv_kwh_total, last.pv_kwh_total), 2),
-            "today_net_kwh": round(net_delta, 2),
-            "today_import_kwh": round(max(0.0, net_delta), 2),
-            "today_export_kwh": round(max(0.0, -net_delta), 2),
-            "today_load_kwh": round(
-                delta_nonneg(first.load_kwh_total, last.load_kwh_total), 2
-            ),
-            "timezone": site_timezone_from_settings(settings),
-            "current": _reading_dict(last),
+            **payload,
+            "timezone": tz,
             "sample_count": len(rows),
+            "last_sample_at": last_sample_at,
+            "collector_hint": collector_hint,
         }
     )
 

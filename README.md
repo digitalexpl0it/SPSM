@@ -226,6 +226,8 @@ curl -sk -b /tmp/pvs.txt "https://$PVS_IP/vars?match=livedata&fmt=obj" | head
 
 Settings are stored in the database and editable from the UI.
 
+**Remote collector:** The collector can run on another host (e.g. a Raspberry Pi on the same LAN as the PVS). It must use the **same `DATABASE_URL` as the API** — live dashboard power is polled on demand, but “today” totals and charts come from readings the collector writes to Postgres. If the UI shows `0 samples`, the API you are browsing is not seeing that database (or `site_timezone` does not match your site).
+
 #### SMTP example (Mailtrap live)
 
 | Field | Example |

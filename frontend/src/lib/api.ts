@@ -462,6 +462,10 @@ export interface SummaryResponse {
   timezone?: string;
   current?: Reading;
   sample_count: number;
+  /** ISO timestamp of newest reading in DB (any day). */
+  last_sample_at?: string | null;
+  /** Set when today totals cannot be computed from stored samples. */
+  collector_hint?: string | null;
 }
 
 export interface LiveResponse {

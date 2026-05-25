@@ -28,6 +28,80 @@ def delta_signed(a: float | None, b: float | None) -> float:
     return sb - sa
 
 
+def _integrate_kwh(rows: list[Reading]) -> tuple[float, float, float]:
+    """Trapezoidal integration of instantaneous kW samples into kWh."""
+    if len(rows) < 2:
+        return 0.0, 0.0, 0.0
+    pv = load = net = 0.0
+    for i in range(1, len(rows)):
+        dt_h = (rows[i].ts - rows[i - 1].ts).total_seconds() / 3600.0
+        if dt_h <= 0 or dt_h > 6:
+            continue
+        p0, p1 = safe_float(rows[i - 1].pv_kw), safe_float(rows[i].pv_kw)
+        l0, l1 = safe_float(rows[i - 1].load_kw), safe_float(rows[i].load_kw)
+        n0, n1 = safe_float(rows[i - 1].net_kw), safe_float(rows[i].net_kw)
+        if p0 is not None and p1 is not None:
+            pv += (p0 + p1) / 2 * dt_h
+        if l0 is not None and l1 is not None:
+            load += (l0 + l1) / 2 * dt_h
+        if n0 is not None and n1 is not None:
+            net += (n0 + n1) / 2 * dt_h
+    return pv, load, net
+
+
+def energy_totals_between(
+    first: Reading,
+    last: Reading,
+    *,
+    integrate_rows: list[Reading] | None = None,
+) -> dict[str, float]:
+    """Energy deltas between two samples; integrate kW if cumulative counters missing."""
+    pv = delta_nonneg(first.pv_kwh_total, last.pv_kwh_total)
+    load = delta_nonneg(first.load_kwh_total, last.load_kwh_total)
+    net_delta = delta_signed(first.net_kwh_total, last.net_kwh_total)
+
+    if integrate_rows and len(integrate_rows) >= 2:
+        if pv < 0.001 and load < 0.001 and abs(net_delta) < 0.001:
+            pv_i, load_i, net_i = _integrate_kwh(integrate_rows)
+            if pv_i > 0.001 or load_i > 0.001 or abs(net_i) > 0.001:
+                pv, load, net_delta = pv_i, load_i, net_i
+
+    return {
+        "today_pv_kwh": round(pv, 2),
+        "today_load_kwh": round(load, 2),
+        "today_net_kwh": round(net_delta, 2),
+        "today_import_kwh": round(max(0.0, net_delta), 2),
+        "today_export_kwh": round(max(0.0, -net_delta), 2),
+    }
+
+
+def today_energy_totals(
+    rows_today: list[Reading],
+    baseline: Reading | None,
+    *,
+    end: Reading | None = None,
+) -> dict[str, float] | None:
+    """
+    Compute today's kWh from DB samples.
+
+    Uses first/last reading today when possible; otherwise baseline (last sample before
+    local midnight) through end (latest today or explicit end reading).
+    """
+    if len(rows_today) >= 2:
+        return energy_totals_between(
+            rows_today[0], rows_today[-1], integrate_rows=rows_today
+        )
+    if len(rows_today) == 1 and baseline is not None:
+        last = end if end is not None else rows_today[0]
+        chain = [baseline, rows_today[0]]
+        if end is not None and end is not rows_today[0]:
+            chain.append(end)
+        return energy_totals_between(baseline, last, integrate_rows=chain)
+    if len(rows_today) == 0 and baseline is not None and end is not None:
+        return energy_totals_between(baseline, end, integrate_rows=[baseline, end])
+    return None
+
+
 def day_energy(rows: list[Reading], tz_name: str | None) -> dict[str, dict[str, Any]]:
     by_day: dict[str, list[Reading]] = {}
     for r in rows:

@@ -265,10 +265,19 @@ export function DashboardPage() {
                 value={`${summary?.today_pv_kwh?.toFixed(1) ?? "0"} kWh`}
                 sub={
                   <>
-                    {summary?.sample_count ?? 0} samples ·{" "}
+                    {summary?.sample_count ?? 0} samples
+                    {summary?.last_sample_at
+                      ? ` · last ${new Date(summary.last_sample_at).toLocaleString()}`
+                      : ""}{" "}
+                    ·{" "}
                     <Link to="/reports" className="text-cyan-glow hover:underline">
                       View report
                     </Link>
+                    {summary?.collector_hint ? (
+                      <span className="block mt-1 text-amber-400/90 normal-case tracking-normal">
+                        {summary.collector_hint}
+                      </span>
+                    ) : null}
                   </>
                 }
                 accent="amber"
